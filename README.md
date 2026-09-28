@@ -159,10 +159,10 @@ To stop: `Ctrl+C`, then `docker compose down` (add `-v` to also delete the datab
 
 ### Option B: run backend and frontend manually
 
-**1. Start a PostgreSQL database.** Either use your own, or run one in Docker:
+**1. Start a PostgreSQL database.** Either use your own, or run one in Docker. Port **5433** is used so it does not clash with a PostgreSQL already installed on your machine (which usually owns 5432):
 
 ```bash
-docker run -d --name cipherchat-db -p 5432:5432 \
+docker run -d --name cipherchat-db -p 5433:5432 \
   -e POSTGRES_DB=cipherchat -e POSTGRES_USER=cipherchat -e POSTGRES_PASSWORD=change-me \
   postgres:17-alpine
 ```
@@ -172,9 +172,11 @@ docker run -d --name cipherchat-db -p 5432:5432 \
 ```bash
 cd backend
 export JWT_SECRET="$(openssl rand -base64 48)"
-export DB_URL=jdbc:postgresql://localhost:5432/cipherchat DB_USERNAME=cipherchat DB_PASSWORD=change-me
+export DB_URL=jdbc:postgresql://localhost:5433/cipherchat DB_USERNAME=cipherchat DB_PASSWORD=change-me
 ./mvnw spring-boot:run
 ```
+
+> If startup fails with `password authentication failed for user "cipherchat"`, the backend is talking to a different PostgreSQL than the one you created. Check with `docker ps` that `cipherchat-db` is **Up** (not just *Created*) and that `DB_URL` uses its port.
 
 The API runs on <http://localhost:8080> and Swagger UI on <http://localhost:8080/swagger-ui.html>. All settings are listed in [`backend/.env.example`](backend/.env.example).
 
