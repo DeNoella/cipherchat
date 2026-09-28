@@ -1,6 +1,6 @@
 package com.cipherchat.config;
 
-import com.cipherchat.common.ErrorResponseWriter;
+import com.cipherchat.exception.ErrorResponseWriter;
 import com.cipherchat.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

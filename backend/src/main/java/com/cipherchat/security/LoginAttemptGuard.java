@@ -1,7 +1,7 @@
 package com.cipherchat.security;
 
-import com.cipherchat.common.RateLimitExceededException;
 import com.cipherchat.config.AppProperties;
+import com.cipherchat.exception.RateLimitExceededException;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;

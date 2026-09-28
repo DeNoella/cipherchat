@@ -1,6 +1,6 @@
 package com.cipherchat.security;
 
-import com.cipherchat.user.UserRepository;
+import com.cipherchat.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
