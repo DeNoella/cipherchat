@@ -1,0 +1,51 @@
+# One-command local stack:  cp .env.example .env && docker compose up --build
+# Frontend http://localhost:3000 · API http://localhost:8080 · Swagger http://localhost:8080/swagger-ui.html
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cipherchat}
+      POSTGRES_USER: ${POSTGRES_USER:-cipherchat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Not published to the host: only the backend talks to the database.
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-cipherchat}
+      DB_USERNAME: ${POSTGRES_USER:-cipherchat}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (at least 32 bytes)}
+      CORS_ALLOWED_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+    volumes:
+      - attachments:/data/attachments
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_URL: ${API_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
+
+volumes:
+  db-data:
+  attachments:
