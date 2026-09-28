@@ -46,7 +46,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('status is 201', () => pm.response.to.have.status(201));"
+              "pm.test('created (201) or already exists from a previous run (409)', () => pm.expect(pm.response.code).to.be.oneOf([201, 409]));"
             ]
           }
         }
@@ -93,7 +93,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('status is 201', () => pm.response.to.have.status(201));"
+              "pm.test('created (201) or already exists from a previous run (409)', () => pm.expect(pm.response.code).to.be.oneOf([201, 409]));"
             ]
           }
         }

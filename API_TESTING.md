@@ -604,7 +604,7 @@ Import [`docs/cipherchat.postman_collection.json`](docs/cipherchat.postman_colle
 - The collection variable `baseUrl` defaults to `http://localhost:8080`.
 - The requests are numbered in the same order as this guide. **Login** requests store `token`/`bobToken` automatically, and **Upload attachment** stores `attachmentId`.
 - Bodies that need a key or ciphertext already contain the sample values from `docs/samples/`. For the attachment upload, select `docs/samples/alice-to-bob.bin` in the `file` field (Postman cannot embed files).
-- Run the whole collection with the **Collection Runner** against a fresh database. Each request has tests that check the expected status code.
+- Run the whole collection with the **Collection Runner**. Each request has tests that check the expected status code. It can be re-run against the same database: the two register requests accept `201` (created) or `409` (already exists from a previous run).
 - Or from the command line, from the repository root (17 requests and 18 assertions, all passing on a fresh stack):
 
   ```bash
