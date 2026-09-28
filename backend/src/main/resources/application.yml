@@ -48,7 +48,8 @@ app:
   messages:
     max-ciphertext-chars: 200000
   login-rate-limit:
-    max-attempts: 5
+    max-attempts: 5          # failed logins per username per window
+    max-attempts-per-ip: 20  # auth requests per client IP per window
     window: PT1M
 
 springdoc:

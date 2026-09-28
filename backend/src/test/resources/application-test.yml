@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:cipherchat;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+
+app:
+  jwt:
+    secret: test-only-secret-that-is-at-least-32-bytes-long
+  attachments:
+    dir: ${java.io.tmpdir}/cipherchat-test-attachments
+  login-rate-limit:
+    max-attempts: 5
+    max-attempts-per-ip: 10000
