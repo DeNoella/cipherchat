@@ -1,0 +1,832 @@
+{
+  "info": {
+    "name": "CipherChat API",
+    "_postman_id": "5b0f3a52-2c7e-4f3e-9c1a-0c1fe2c4a7d1",
+    "description": "End-to-end encrypted chat API. Run in order against a fresh database. See API_TESTING.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "bobToken",
+      "value": ""
+    },
+    {
+      "key": "conversationId",
+      "value": "1"
+    },
+    {
+      "key": "attachmentId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Register alice",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201', () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "register"
+          ]
+        },
+        "description": "Creates Alice without a key (uploaded in step 05).",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"alice\",\n  \"password\": \"correct horse battery\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      }
+    },
+    {
+      "name": "02 Register bob (with public key)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201', () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "register"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"bob\",\n  \"password\": \"bob password 123\",\n  \"publicKey\": \"-----BEGIN PGP PUBLIC KEY BLOCK-----\\n\\nxjMEarplTBYJKwYBBAHaRw8BAQdApk0hqaYFKj0UZTFt/MJNEBzRN7oJh7+l\\nK4Qbahy0yS7NA2JvYsLAEwQTFgoAhQWCarplTAMLCQcJEPdlB3NfrAf5RRQA\\nAAAAABwAIHNhbHRAbm90YXRpb25zLm9wZW5wZ3Bqcy5vcmf7sBtMh6pn6IOW\\neqEINVDyJ7PwZg2HgOQZf25jdNumEgUVCggODAQWAAIBAhkBApsDAh4BFiEE\\nTzG8EipYhKMmi6Jr92UHc1+sB/kAAGPDAQD+ZeG+dAfvGThTpUIRxGlSGJ3y\\nVh6Waj1KLm0w/JejkAD/QOb++JyQB/8jyNikMdiHvZ5Q8HsUR7utuJcswAGg\\n/QLOOARqumVMEgorBgEEAZdVAQUBAQdAXZeOP5AR5zdldryNNWrCx9LY4MBD\\n6Aam6PqiZQcf5xEDAQgHwr4EGBYKAHAFgmq6ZUwJEPdlB3NfrAf5RRQAAAAA\\nABwAIHNhbHRAbm90YXRpb25zLm9wZW5wZ3Bqcy5vcmcmTCdpj4i+jppC4ZMg\\njVaV1aQH2NUX9MNMNboY+V06xwKbDBYhBE8xvBIqWISjJouia/dlB3NfrAf5\\nAAAS7QEAgt7UBjVMFXaletccZPalgmM5ONJ3FaWJQF2Q5c0KM9MBAMAJYEuX\\nKNRNPMEI95nwXWOppfD83GZT2wxKjyDP1H4J\\n=J+Py\\n-----END PGP PUBLIC KEY BLOCK-----\\n\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      }
+    },
+    {
+      "name": "03 Login alice",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('token', pm.response.json().token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"alice\",\n  \"password\": \"correct horse battery\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      }
+    },
+    {
+      "name": "04 Login bob",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('bobToken', pm.response.json().token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"bob\",\n  \"password\": \"bob password 123\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      }
+    },
+    {
+      "name": "05 Upload alice's public key",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('fingerprint returned', () => pm.expect(pm.response.json().fingerprint).to.match(/^[0-9A-F]{40}$/));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/keys/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "keys",
+            "me"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"publicKey\": \"-----BEGIN PGP PUBLIC KEY BLOCK-----\\n\\nxjMEarplTBYJKwYBBAHaRw8BAQdATuZlaKfzdV6P+9tOFOQ72SQxSb3n+w80\\n+DpvdGe2+tjNBWFsaWNlwsATBBMWCgCFBYJqumVMAwsJBwkQGrFynuO5uyNF\\nFAAAAAAAHAAgc2FsdEBub3RhdGlvbnMub3BlbnBncGpzLm9yZwvwB6dQYkWs\\n4nENdVlGzb/BJSbbVoD1RUgkXd2JhtlmBRUKCA4MBBYAAgECGQECmwMCHgEW\\nIQRxR/GKE6r4ogsv2UkasXKe47m7IwAA2KEA/0HXGkIk5E5b3+93yBEPQHmU\\nN99SX7NYUvE6Zg2BZEJ4AP4jhiedp8mEmNMutiJIcIm//iSOxDKV2hZpZrc8\\n2QFZAc44BGq6ZUwSCisGAQQBl1UBBQEBB0AdhQ3ZkgkgO0FoSHvEbEwEmKIU\\nxW0qhTqSNLICKBydVQMBCAfCvgQYFgoAcAWCarplTAkQGrFynuO5uyNFFAAA\\nAAAAHAAgc2FsdEBub3RhdGlvbnMub3BlbnBncGpzLm9yZ4fD7P5/VhpKpAnL\\nrbwtJHg0rDzaNnIogyOY4ZX25xqTApsMFiEEcUfxihOq+KILL9lJGrFynuO5\\nuyMAABjrAQD2QI16Ntm9gv+cx11JLqDss6WgOAYWdUH8i1ZABY5D1AD/fj7y\\naapkSy9fxIDhQ8aeXQTq41x8tqwYL9QEZ9KHbAU=\\n=RKBh\\n-----END PGP PUBLIC KEY BLOCK-----\\n\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "06 Upload a private key (rejected)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 400', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/keys/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "keys",
+            "me"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"publicKey\": \"-----BEGIN PGP PRIVATE KEY BLOCK-----\\n...\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "07 Get bob's public key",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/keys/bob",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "keys",
+            "bob"
+          ]
+        },
+        "description": "",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "08 Search users",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/users?query=b",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "users"
+          ],
+          "query": [
+            {
+              "key": "query",
+              "value": "b"
+            }
+          ]
+        },
+        "description": "",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "09 Start conversation with bob",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('conversationId', pm.response.json().id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/conversations",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "conversations"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"bob\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "10 Upload encrypted attachment",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('attachmentId', pm.response.json().id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/attachments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "attachments"
+          ]
+        },
+        "description": "Select docs/samples/alice-to-bob.bin for the 'file' field before sending.",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "recipientUsername",
+              "value": "bob",
+              "type": "text"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": "docs/samples/alice-to-bob.bin",
+              "description": "Path is relative to the repository root (Newman: --working-dir .). In Postman, re-select the file if prompted."
+            }
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "11 Send encrypted message",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201', () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/messages",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "messages"
+          ]
+        },
+        "description": "If you skipped step 10, delete the attachmentId field.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"recipientUsername\": \"bob\",\n  \"ciphertext\": \"-----BEGIN PGP MESSAGE-----\\n\\nwV4DbqL8FjDlVVESAQdAoRpEQlDLED+xXQkCsw2XoGoojdxA2n27yPXUfvaT\\nLEkwNeevO42MerbQ8OIqtffucwdYrtwIS5oq1QbcZpnSQxZxhi8w9nmCIpXa\\nfybn6hmnwV4DXQMdBEiJyAwSAQdARs6x085S6efW+023pCkRpVRo1hBBYyWW\\nk3Sas6GvXVQwngR6YsUlcIvK1F4BIfKmSXJhRZDRzQ8vb+BirMN3SB5wxDbp\\nyBgcYR+10LVgackf0sBXAZkap92n/5SN+iOTjUng7BHf/8RQdXfUhvAMecsN\\n6sRLbzyXfCrHYmGhcZ8912DhtkKuHhjGi0Kc839RWwHJRIX0Y84Peybj0ZLx\\nw/XiXaJWFy5izrvsFlNdWPOJx15y3Un8bOz0Qo14v4wWjdQZ8EYgEmxqN/wx\\nwaC3owoC2RL92hY1ydjHhdBnuskAbF/s+oQ+JSKxDQD1cmTod2IXV9ftd7I5\\n5wjVzXlstL9UEr9Z6NzaZPFW8sLiwgO7mLVsII9XproNisg9PJfHU3ygovCs\\nogIc104W9C6OQmnaHKAoW1n1j6zLyltQtfurvQQuSDpbeeEL1/0HgwcUg552\\nBG70v0I9I9fs1Fm73F9mkEOKuzUi6SHf\\n=qfKO\\n-----END PGP MESSAGE-----\\n\",\n  \"attachmentId\": \"{{attachmentId}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "12 Send plaintext (rejected)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 400', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/messages",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "messages"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"recipientUsername\": \"bob\",\n  \"ciphertext\": \"hello in the clear\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "13 List conversations (bob)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/conversations",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "conversations"
+          ]
+        },
+        "description": "",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{bobToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "14 Message history (bob)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/conversations/{{conversationId}}/messages?size=50",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "conversations",
+            "{{conversationId}}",
+            "messages"
+          ],
+          "query": [
+            {
+              "key": "size",
+              "value": "50"
+            }
+          ]
+        },
+        "description": "",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{bobToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "15 Download attachment (bob)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/attachments/{{attachmentId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "attachments",
+            "{{attachmentId}}"
+          ]
+        },
+        "description": "",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{bobToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "16 Protected endpoint without token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 401', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/conversations",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "conversations"
+          ]
+        },
+        "description": "",
+        "auth": {
+          "type": "noauth"
+        }
+      }
+    },
+    {
+      "name": "17 Health",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/actuator/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "actuator",
+            "health"
+          ]
+        },
+        "description": "",
+        "auth": {
+          "type": "noauth"
+        }
+      }
+    }
+  ]
+}
