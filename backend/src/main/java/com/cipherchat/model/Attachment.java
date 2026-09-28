@@ -12,7 +12,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Metadata for an encrypted attachment. The bytes live in {@link AttachmentStorage}.
+ * Metadata for an encrypted attachment. The bytes live in {@link com.cipherchat.service.AttachmentStorage}.
  * File name and MIME type are deliberately absent: they travel inside the encrypted message.
  */
 @Entity
