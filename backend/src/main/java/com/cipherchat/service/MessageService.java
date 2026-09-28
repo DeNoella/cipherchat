@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 
 @Service
 public class MessageService {
@@ -34,16 +33,19 @@ public class MessageService {
     private final AttachmentRepository attachments;
     private final ConversationService conversationService;
     private final OpenPgpInspector inspector;
+    private final PublicKeyService publicKeyService;
     private final ApplicationEventPublisher events;
     private final int maxCiphertextChars;
 
     public MessageService(MessageRepository messages, AttachmentRepository attachments,
                           ConversationService conversationService, OpenPgpInspector inspector,
+                          PublicKeyService publicKeyService,
                           ApplicationEventPublisher events, AppProperties properties) {
         this.messages = messages;
         this.attachments = attachments;
         this.conversationService = conversationService;
         this.inspector = inspector;
+        this.publicKeyService = publicKeyService;
         this.events = events;
         this.maxCiphertextChars = properties.messages().maxCiphertextChars();
     }
@@ -57,13 +59,8 @@ public class MessageService {
         User recipient = conversation.peerOf(me.id());
         User sender = conversation.peerOf(recipient.getId());
 
-        if (!sender.hasPublicKey()) {
-            throw ApiException.badRequest("Upload your public key before sending messages");
-        }
-        if (!recipient.hasPublicKey()) {
-            throw ApiException.badRequest("Recipient has not uploaded a public key yet");
-        }
-        requireAddressedToBoth(inspector.encryptedMessageRecipients(request.ciphertext()), sender, recipient);
+        publicKeyService.requireAddressedToBoth(inspector.encryptedMessageRecipients(request.ciphertext()),
+                sender, recipient);
 
         Attachment attachment = null;
         if (request.attachmentId() != null) {
@@ -92,20 +89,5 @@ public class MessageService {
                 .stream().map(MessageResponse::from).toList());
         Collections.reverse(page);
         return page;
-    }
-
-    /**
-     * Enforces the E2EE contract server-side: the ciphertext must be addressed to the recipient's
-     * current key (so they can read it) and to the sender's key (so the sender can read their history).
-     */
-    private void requireAddressedToBoth(Set<Long> recipients, User sender, User recipient) {
-        Set<Long> recipientKeys = inspector.inspectPublicKey(recipient.getPublicKey()).encryptionKeyIds();
-        Set<Long> senderKeys = inspector.inspectPublicKey(sender.getPublicKey()).encryptionKeyIds();
-        if (Collections.disjoint(recipients, recipientKeys)) {
-            throw ApiException.badRequest("Message is not encrypted to the recipient's current public key");
-        }
-        if (Collections.disjoint(recipients, senderKeys)) {
-            throw ApiException.badRequest("Message must also be encrypted to your own public key");
-        }
     }
 }
