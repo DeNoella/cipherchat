@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: cipherchat
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/cipherchat}
+    username: ${DB_USERNAME:cipherchat}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      # Hard ceiling enforced by the servlet container; the service applies the precise limit.
+      max-file-size: 12MB
+      max-request-size: 12MB
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: ${PORT:8080}
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+    whitelabel:
+      enabled: false
+
+app:
+  jwt:
+    # Required. At least 32 bytes. Never commit a real value.
+    secret: ${JWT_SECRET:}
+    ttl: ${JWT_TTL:PT12H}
+    issuer: cipherchat
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGIN:http://localhost:3000}
+  attachments:
+    dir: ${ATTACHMENTS_DIR:./data/attachments}
+    # Plaintext limit is 10 MB (enforced in the browser); allow headroom for OpenPGP framing.
+    max-encrypted-bytes: 11010048
+  messages:
+    max-ciphertext-chars: 200000
+  login-rate-limit:
+    max-attempts: 5
+    window: PT1M
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
