@@ -1,11 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
 import { apiBaseUrl, wsUrl } from "@/lib/runtime-config";
+import "@fontsource-variable/inter";
 import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "CipherChat",
@@ -24,7 +22,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   const api = apiBaseUrl();
 
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+    <html lang="en" className="h-full antialiased">
       <body className="min-h-full font-sans">
         <Providers apiUrl={api} wsUrl={wsUrl(api)}>
           {children}
