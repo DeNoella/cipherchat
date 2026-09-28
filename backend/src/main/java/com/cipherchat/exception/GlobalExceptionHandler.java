@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -69,6 +70,11 @@ public class GlobalExceptionHandler {
         ApiError error = new ApiError(Instant.now(), 400, "Bad Request", "Validation failed",
                 request.getRequestURI(), fieldErrors);
         return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ResponseEntity<ApiError> handleIntegrity(HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT, "Request conflicted with a concurrent change; please retry", request);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
