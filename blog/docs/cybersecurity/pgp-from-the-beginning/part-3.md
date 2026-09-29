@@ -148,6 +148,9 @@ The file is encrypted in alice's browser and uploaded first. Its name and type t
 **Journey step 8: sending and downloading an encrypted attachment.**
 
 1. alice clicks the **+** button next to the message box and chooses a file (10 MB maximum). It appears above the box, with its name, size and a **Remove** link.
+
+   ![The message box with plan.txt · 1 KB chosen above it, a Remove link, and the text "see attached"](/screenshots/attach-chosen.png)
+
 2. She types `see attached` and clicks **Send**.
 3. bob sees the message with a small file button showing a lock icon, the name `plan.txt` and its size.
 4. bob clicks it. His browser downloads the encrypted blob, decrypts it, checks the signature, and saves the file with its original name.

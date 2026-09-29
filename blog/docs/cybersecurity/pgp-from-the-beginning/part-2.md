@@ -269,15 +269,20 @@ Encryption is only as good as the public key you use. If the server (or an attac
 **Journey step 5: finding another user and viewing their fingerprint.**
 
 1. On **Chats**, type part of a username in **Start a conversation**. Matching users appear. Users without a key show "no key yet".
+
+   ![The Chats page searching "ca": the result carol is marked "no key yet"](/screenshots/search.png)
+
 2. Click a user to open the chat.
 3. Click **Key fingerprint** at the top right. You'll see their fingerprint in groups of four, like `5B6B 6AC6 EA1C 397B ...`
 4. Compare it with the fingerprint they see on their own **Profile** page, in person or over a call. If they match, click **Fingerprints match — mark verified**. A small "verified key" label then appears next to their name.
 
-![The chat header with the fingerprint panel open and the "Fingerprints match — mark verified" button](/screenshots/chat.png)
+![bob's chat with alice, with the fingerprint panel open: A8BE 937A 0EA7 F203 ... and the "Fingerprints match — mark verified" button](/screenshots/bob-chat.png)
 
-![The Profile page showing "Your key fingerprint", the key algorithm, and the export buttons](/screenshots/profile.png)
+![alice's Profile page showing the same fingerprint A8BE 937A 0EA7 F203 ..., the key algorithm, and the export buttons](/screenshots/profile-backup.png)
 
 CipherChat also remembers the first fingerprint it sees for each contact. This is called **trust on first use**. If the key ever changes, sending is blocked and you see *"bob's key has changed"*, with the old and new fingerprints side by side.
+
+![A warning in the chat: "bob's key has changed", showing the previous and new fingerprints, with sending disabled](/screenshots/key-changed.png)
 
 ### A simple comparison
 
@@ -348,6 +353,8 @@ Your private key is stored **locked** with your passphrase, is only unlocked in 
 ### Where you see it in CipherChat
 
 **Journey step 4: logging in and unlocking the private key.** The **Sign in** screen asks for three things: **Username**, **Password** and **Key passphrase**. The hint says *"Unlocks your private key on this device only."*
+
+![The Sign in screen with Username, Password and Key passphrase fields](/screenshots/login.png)
 
 1. Username and password go to the server, which answers with a login token.
 2. The passphrase **stays in the browser**. It unlocks the locked private key stored there.
