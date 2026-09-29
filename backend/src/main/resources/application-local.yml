@@ -1,0 +1,13 @@
+# Development settings, activated automatically by `./mvnw spring-boot:run` (see pom.xml).
+# Matches the `cipherchat-db` container from the README. Values are fixed on purpose so that
+# stale DB_* / JWT_SECRET exports in your shell cannot break local startup.
+# Never used by the packaged jar / Docker image, which must be given real secrets.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/cipherchat
+    username: cipherchat
+    password: change-me
+
+app:
+  jwt:
+    secret: local-dev-only-jwt-secret-do-not-use-in-production

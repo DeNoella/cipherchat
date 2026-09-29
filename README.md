@@ -127,7 +127,7 @@ flowchart LR
 
 ---
 
-## How to run the project
+## Running the project
 
 ### Prerequisites
 
@@ -171,12 +171,14 @@ docker run -d --name cipherchat-db -p 5433:5432 \
 
 ```bash
 cd backend
-export JWT_SECRET="$(openssl rand -base64 48)"
-export DB_URL=jdbc:postgresql://localhost:5433/cipherchat DB_USERNAME=cipherchat DB_PASSWORD=change-me
 ./mvnw spring-boot:run
 ```
 
-> If startup fails with `password authentication failed for user "cipherchat"`, the backend is talking to a different PostgreSQL than the one you created. Check with `docker ps` that `cipherchat-db` is **Up** (not just *Created*) and that `DB_URL` uses its port.
+`spring-boot:run` activates the `local` profile ([`application-local.yml`](backend/src/main/resources/application-local.yml)), which points at the `cipherchat-db` container above and uses a development-only JWT secret. No environment variables are needed, and any `DB_*` / `JWT_SECRET` exports in your shell are ignored.
+
+> After a reboot the database container is stopped. Start it again with `docker start cipherchat-db`.
+
+> If startup fails with `password authentication failed for user "cipherchat"`, the backend is talking to a different PostgreSQL than the one you created. Check with `docker ps` that `cipherchat-db` is **Up** (not just *Created*) and listening on port 5433.
 
 The API runs on <http://localhost:8080> and Swagger UI on <http://localhost:8080/swagger-ui.html>. All settings are listed in [`backend/.env.example`](backend/.env.example).
 
