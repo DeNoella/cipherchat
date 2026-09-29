@@ -30,7 +30,7 @@ export const courses = [
       { title: 'Part I: Why encryption, and the two kinds of keys', link: '/cybersecurity/pgp-from-the-beginning/part-1' },
       { title: 'Part II: How PGP actually protects a message', link: '/cybersecurity/pgp-from-the-beginning/part-2' },
       { title: 'Part III: PGP inside CipherChat, end to end', link: '/cybersecurity/pgp-from-the-beginning/part-3' },
-      { title: 'Part IV: Spring Boot architecture, layer by layer', link: '/cybersecurity/pgp-from-the-beginning/part-4', soon: true },
+      { title: 'Part IV: Spring Boot architecture, layer by layer', link: '/cybersecurity/pgp-from-the-beginning/part-4' },
       { title: 'Part V: Limitations, proof, and interview prep', link: '/cybersecurity/pgp-from-the-beginning/part-5', soon: true },
     ],
   },

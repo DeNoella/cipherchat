@@ -197,11 +197,23 @@
 }
 
 .mermaid {
+  line-height: 1.5;
+  font-size: 16px;
   background: var(--warm-white);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 16px 8px;
   margin: 20px 0;
+}
+
+/* Mermaid wraps labels in <p>; don't let article paragraph styles change their size. */
+.vp-doc .mermaid p,
+.vp-doc .mermaid span {
+  margin: 0;
+  line-height: 1.5;
+  font-size: inherit;
+  font-family: inherit;
+  color: inherit;
 }
 
 /* ---------- Components ---------- */
@@ -314,8 +326,15 @@ a.card:hover {
   background: var(--warm-white);
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 4px 24px 12px;
+  padding: 4px 18px 12px;
   margin: 28px 0;
+}
+
+/* Let code blocks and diagrams inside a card use the full card width. */
+.vp-doc .layer-card div[class*='language-'],
+.vp-doc .layer-card .mermaid {
+  margin-left: -10px;
+  margin-right: -10px;
 }
 
 .vp-doc .screenshot-placeholder {

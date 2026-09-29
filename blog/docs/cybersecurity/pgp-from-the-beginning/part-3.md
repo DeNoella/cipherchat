@@ -485,4 +485,4 @@ Each card says what the library does, where you meet it in the user journey, and
 - **The server sees metadata** (who, when, how big) but **never content** (text, files, names, private keys).
 - **OpenPGP.js** does the cryptography in the browser. **BouncyCastle** only checks on the server. **Spring Security, BCrypt and JJWT** handle logins.
 
-**Next:** Part IV: Spring Boot architecture, layer by layer (coming soon).
+**Next:** [Part IV: Spring Boot architecture, layer by layer](./part-4)
