@@ -1,0 +1,335 @@
+/*
+ * Warm, light theme. No black anywhere: backgrounds are white, off-white and soft beige,
+ * text is warm dark brown, and the single accent is a muted terracotta.
+ */
+:root {
+  --warm-white: #fffdf9;
+  --off-white: #fbf8f3;
+  --beige: #f5eee4;
+  --beige-deep: #efe5d7;
+  --line: #e6dccd;
+  --line-strong: #d6c7b3;
+
+  --brown-900: #4a3b30;
+  --brown-700: #65523f;
+  --brown-500: #8a7462;
+
+  --terracotta: #b0603f;
+  --terracotta-dark: #96503a;
+  --terracotta-soft: rgba(176, 96, 63, 0.12);
+  --sage: #7d8f6a;
+  --sage-soft: rgba(125, 143, 106, 0.14);
+
+  --vp-c-bg: var(--off-white);
+  --vp-c-bg-alt: var(--beige);
+  --vp-c-bg-elv: var(--warm-white);
+  --vp-c-bg-soft: var(--beige);
+
+  --vp-c-text-1: var(--brown-900);
+  --vp-c-text-2: var(--brown-700);
+  --vp-c-text-3: var(--brown-500);
+
+  --vp-c-divider: var(--line);
+  --vp-c-border: var(--line-strong);
+  --vp-c-gutter: var(--line);
+
+  --vp-c-brand-1: var(--terracotta);
+  --vp-c-brand-2: var(--terracotta-dark);
+  --vp-c-brand-3: var(--terracotta);
+  --vp-c-brand-soft: var(--terracotta-soft);
+
+  --vp-c-default-1: var(--line-strong);
+  --vp-c-default-2: var(--line);
+  --vp-c-default-3: var(--beige-deep);
+  --vp-c-default-soft: var(--beige);
+
+  --vp-c-tip-1: var(--sage);
+  --vp-c-tip-2: var(--sage);
+  --vp-c-tip-3: var(--sage);
+  --vp-c-tip-soft: var(--sage-soft);
+  --vp-c-note-1: var(--brown-700);
+  --vp-c-note-soft: var(--beige);
+  --vp-c-warning-1: #9a6a1f;
+  --vp-c-warning-soft: rgba(214, 160, 70, 0.16);
+  --vp-c-danger-1: #a4483a;
+  --vp-c-danger-soft: rgba(176, 72, 58, 0.1);
+
+  --vp-font-family-base: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --vp-code-bg: var(--beige);
+  --vp-code-color: var(--terracotta-dark);
+  --vp-code-block-bg: var(--beige);
+  --vp-code-block-color: var(--brown-900);
+  --vp-code-block-divider-color: var(--line);
+  --vp-code-line-number-color: var(--brown-500);
+  --vp-code-copy-code-bg: var(--warm-white);
+  --vp-code-copy-code-hover-bg: var(--beige-deep);
+  --vp-code-copy-code-border-color: var(--line-strong);
+  --vp-code-lang-color: var(--brown-500);
+
+  --vp-nav-bg-color: var(--warm-white);
+  --vp-sidebar-bg-color: var(--beige);
+  --vp-local-search-bg: var(--off-white);
+  --vp-local-search-result-bg: var(--warm-white);
+
+  --vp-home-hero-name-color: var(--brown-900);
+  --vp-button-brand-bg: var(--terracotta);
+  --vp-button-brand-hover-bg: var(--terracotta-dark);
+  --vp-button-brand-active-bg: var(--terracotta-dark);
+  --vp-button-brand-text: var(--warm-white);
+  --vp-button-brand-hover-text: var(--warm-white);
+  --vp-button-brand-active-text: var(--warm-white);
+  --vp-button-alt-bg: var(--beige);
+  --vp-button-alt-text: var(--brown-900);
+  --vp-button-alt-hover-bg: var(--beige-deep);
+  --vp-button-alt-hover-text: var(--brown-900);
+  --vp-button-alt-border: var(--line-strong);
+  --vp-button-alt-hover-border: var(--line-strong);
+}
+
+/* Shadows and overlays: warm brown, never black. */
+:root {
+  --vp-shadow-1: 0 1px 2px rgba(74, 59, 48, 0.06), 0 1px 2px rgba(74, 59, 48, 0.04);
+  --vp-shadow-2: 0 3px 12px rgba(74, 59, 48, 0.07), 0 1px 4px rgba(74, 59, 48, 0.05);
+  --vp-shadow-3: 0 12px 32px rgba(74, 59, 48, 0.1), 0 2px 6px rgba(74, 59, 48, 0.06);
+  --vp-backdrop-bg-color: rgba(74, 59, 48, 0.35);
+}
+
+/* ---------- Reading layout ---------- */
+
+.vp-doc {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4,
+.vp-doc table,
+.vp-doc .custom-block-title,
+.vp-doc details summary {
+  font-family: var(--vp-font-family-base);
+}
+
+.vp-doc h1 {
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.vp-doc h2 {
+  border-top-color: var(--line);
+  margin-top: 56px;
+}
+
+.vp-doc p,
+.vp-doc li {
+  color: var(--brown-900);
+}
+
+.vp-doc a {
+  color: var(--terracotta);
+  text-decoration-color: rgba(176, 96, 63, 0.35);
+  text-underline-offset: 3px;
+}
+
+.vp-doc a:hover {
+  color: var(--terracotta-dark);
+  text-decoration-color: currentColor;
+}
+
+.vp-doc strong {
+  color: var(--brown-900);
+  font-weight: 600;
+}
+
+.vp-doc :not(pre) > code {
+  font-size: 0.85em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+/* Code blocks: light beige, with line numbers. */
+.vp-doc div[class*='language-'] {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.vp-doc div[class*='language-'] code {
+  font-size: 14px;
+}
+
+/* Short quote notes for tips and warnings. */
+.vp-doc blockquote {
+  border-left: 3px solid var(--terracotta);
+  background: var(--warm-white);
+  padding: 10px 16px;
+  border-radius: 0 6px 6px 0;
+  margin: 20px 0;
+}
+
+.vp-doc blockquote > p {
+  color: var(--brown-700);
+  font-size: 16.5px;
+}
+
+/* Click-to-reveal answers. */
+.vp-doc .custom-block.details {
+  background: var(--warm-white);
+  border: 1px solid var(--line);
+}
+
+.vp-doc .custom-block.details summary {
+  color: var(--terracotta);
+  font-weight: 500;
+}
+
+.vp-doc table {
+  font-size: 15px;
+}
+
+.vp-doc tr:nth-child(2n) {
+  background: var(--beige);
+}
+
+.vp-doc img {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--vp-shadow-2);
+}
+
+.mermaid {
+  background: var(--warm-white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 8px;
+  margin: 20px 0;
+}
+
+/* ---------- Components ---------- */
+
+.series-nav {
+  background: var(--beige);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin: 24px 0;
+  font-family: var(--vp-font-family-base);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.series-nav__title {
+  margin: 0 0 6px !important;
+  font-weight: 600;
+  color: var(--brown-700) !important;
+}
+
+.series-nav ol {
+  margin: 0 !important;
+  padding-left: 20px;
+}
+
+.series-nav li {
+  margin: 2px 0 !important;
+  font-size: 15px;
+}
+
+.series-nav li.here {
+  font-weight: 600;
+}
+
+.series-nav em {
+  font-style: normal;
+  color: var(--terracotta);
+  font-weight: 500;
+}
+
+.series-nav .soon,
+.series-nav .soon em {
+  color: var(--brown-500);
+}
+
+.cards {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin: 24px 0;
+  font-family: var(--vp-font-family-base);
+}
+
+.card {
+  display: block;
+  background: var(--warm-white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 22px;
+  text-decoration: none !important;
+  color: inherit !important;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+a.card:hover {
+  border-color: var(--terracotta);
+  box-shadow: var(--vp-shadow-2);
+}
+
+.card h3 {
+  margin: 0 0 8px !important;
+  font-size: 19px;
+  color: var(--brown-900);
+}
+
+.card h3 a {
+  color: var(--brown-900) !important;
+  text-decoration: none !important;
+}
+
+.card p,
+.card li {
+  font-size: 15px !important;
+  line-height: 1.6 !important;
+  color: var(--brown-700) !important;
+  margin: 0 0 10px !important;
+}
+
+.card ul {
+  padding-left: 18px;
+  margin: 0 0 12px !important;
+}
+
+.card__meta,
+.card__more {
+  font-size: 13.5px;
+  color: var(--terracotta) !important;
+  font-weight: 500;
+}
+
+.empty-note {
+  font-family: var(--vp-font-family-base);
+  color: var(--brown-500) !important;
+  font-style: italic;
+}
+
+/* A "card" section inside an article (Part IV layers, Part III libraries). */
+.vp-doc .layer-card {
+  background: var(--warm-white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px 24px 12px;
+  margin: 28px 0;
+}
+
+.vp-doc .screenshot-placeholder {
+  font-family: var(--vp-font-family-base);
+  background: var(--beige);
+  border: 2px dashed var(--line-strong);
+  border-radius: 10px;
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--brown-500);
+  font-size: 15px;
+  margin: 20px 0;
+}
