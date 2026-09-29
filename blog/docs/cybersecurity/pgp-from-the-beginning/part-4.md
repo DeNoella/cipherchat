@@ -1075,6 +1075,9 @@ sequenceDiagram
 3. The **entry point** in `SecurityConfig` calls `ErrorResponseWriter`, which writes `401` "Authentication required". `GlobalExceptionHandler` isn't involved, because this happens before any controller.
 4. In the browser, `createApi` sees the `401` and calls `onUnauthorized`: the session is cleared and you land on **Sign in** with *"Your session expired. Please sign in again."*
 
+   ![The Sign in screen with the notice "Your session expired. Please sign in again."](/screenshots/expired.png)
+
+
 **Case 2, invalid public key:**
 
 1. `OpenPgpInspector.inspectPublicKey` throws `InvalidPgpDataException` (a `400` `ApiException`).
@@ -1167,4 +1170,4 @@ Three things are in memory today: the rate limiter, the WebSocket simple broker,
 - **PGP shows up** mostly in the Service layer (BouncyCastle checks) and Security (JWT on REST and STOMP). The server **never decrypts**.
 - You can now trace any request, from the browser to the database and back, naming the real classes.
 
-**Next:** Part V: Limitations, proof, and interview prep (coming soon).
+**Next:** [Part V: Limitations, proof, and interview prep](./part-5)

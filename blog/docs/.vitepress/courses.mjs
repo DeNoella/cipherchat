@@ -31,7 +31,7 @@ export const courses = [
       { title: 'Part II: How PGP actually protects a message', link: '/cybersecurity/pgp-from-the-beginning/part-2' },
       { title: 'Part III: PGP inside CipherChat, end to end', link: '/cybersecurity/pgp-from-the-beginning/part-3' },
       { title: 'Part IV: Spring Boot architecture, layer by layer', link: '/cybersecurity/pgp-from-the-beginning/part-4' },
-      { title: 'Part V: Limitations, proof, and interview prep', link: '/cybersecurity/pgp-from-the-beginning/part-5', soon: true },
+      { title: 'Part V: Limitations, proof, and interview prep', link: '/cybersecurity/pgp-from-the-beginning/part-5' },
     ],
   },
 ]
