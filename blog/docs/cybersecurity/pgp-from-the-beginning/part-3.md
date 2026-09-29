@@ -34,7 +34,7 @@ alice's browser encrypts and signs the message, the server checks it's valid cip
 
 ### Where you see it in CipherChat
 
-**Journey steps 6 and 7.** alice and bob both have the chat open. alice types `hello bob` and presses **Send**. Almost instantly, bob sees the message appear with **✓ Verified**, without refreshing.
+**Journey steps 6 and 7.** alice and bob both have the chat open. alice types `hello bob` and presses **Send**. Almost instantly, bob sees the message appear with **Verified**, without refreshing.
 
 ```mermaid
 sequenceDiagram
@@ -51,7 +51,7 @@ sequenceDiagram
     S-->>A: 201 Created
     S->>B: After commit: push over WebSocket
     B->>B: decryptEnvelope(): decrypt with bob's key,<br/>verify with alice's public key
-    Note over B: Shows "hello bob" + ✓ Verified
+    Note over B: Shows "hello bob" + Verified
 ```
 
 ### Step by step
@@ -62,7 +62,7 @@ sequenceDiagram
 4. **The server checks the content.** `MessageService.send` rejects anything over 200,000 characters. Then it finds or creates the conversation, reads the key IDs from the PGP packets with BouncyCastle, and checks the message is locked for bob and alice.
 5. **It stores the ciphertext.** A new row goes into the `messages` table. The conversation's `last_message_at` is updated.
 6. **It announces the new message.** `MessageService` publishes a `MessageSentEvent`. Once the database transaction is committed, `MessageRelay` pushes the message over WebSocket to bob, and to alice's other tabs.
-7. **bob's browser decrypts and verifies.** `useIncomingMessages` receives it on `/user/queue/messages`. The chat decrypts it with bob's private key, checks the signature with alice's public key, and shows the text with **✓ Verified**.
+7. **bob's browser decrypts and verifies.** `useIncomingMessages` receives it on `/user/queue/messages`. The chat decrypts it with bob's private key, checks the signature with alice's public key, and shows the text with **Verified**.
 
 ### Proof
 

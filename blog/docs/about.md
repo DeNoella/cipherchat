@@ -7,7 +7,7 @@ sidebar: false
 
 > This is a placeholder. Edit `blog/docs/about.md` to make it yours.
 
-Hi, I'm **[your name]**. I'm learning cybersecurity and software development, and this blog is where I write down what I learn, in plain words.
+Hi, I'm **Noella**. I'm learning cybersecurity and software development, and this blog is where I write down what I learn, in plain words.
 
 I learn best by building. So every course here is tied to a real project I made, and every claim links to the exact lines of code that prove it.
 

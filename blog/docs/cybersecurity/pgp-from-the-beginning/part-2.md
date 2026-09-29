@@ -163,7 +163,7 @@ When your browser signs a message, it hashes the message and signs that hash wit
 
 ### Where you see it in CipherChat
 
-**Journey step 7: receiving and decrypting.** When bob opens the chat, each message shows a small **✓ Verified** badge next to the time.
+**Journey step 7: receiving and decrypting.** When bob opens the chat, each message shows a small **Verified** badge next to the time.
 
 ![A CipherChat conversation. Each message shows a lock icon, the time and a "Verified" badge](/screenshots/chat.png)
 
@@ -171,7 +171,7 @@ The badge can show three things:
 
 | Badge | What it means |
 | --- | --- |
-| **✓ Verified** | Signed by the sender's current public key, and not changed. |
+| **Verified** | Signed by the sender's current public key, and not changed. |
 | **Signature invalid** | Signed, but not by the key CipherChat has for that sender. |
 | **Unsigned** | No signature at all. |
 

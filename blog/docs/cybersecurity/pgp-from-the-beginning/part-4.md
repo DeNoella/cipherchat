@@ -1000,7 +1000,7 @@ sequenceDiagram
     C-->>A: 201 MessageResponse
     Note over M,RL: transaction commits
     RL->>B: convertAndSendToUser("bob", "/queue/messages")
-    B->>B: decrypt + verify → "✓ Verified"
+    B->>B: decrypt + verify → "Verified"
 ```
 
 1. `JwtAuthenticationFilter` turns the token into `AuthUser(alice)`.

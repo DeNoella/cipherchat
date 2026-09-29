@@ -129,7 +129,7 @@ Let's break it down:
 - **`wV4D` appears twice**: each one starts a locked copy of the session key. One is for bob's key, one is for alice's (Part II).
 
 <div class="screenshot-placeholder">
-📸 <strong>Screenshot to add:</strong> DevTools → Network → <code>messages</code> → Payload, showing the ciphertext.<br>
+<strong>Screenshot to add:</strong> DevTools → Network → <code>messages</code> → Payload, showing the ciphertext.<br>
 Save it as <code>blog/docs/public/screenshots/devtools-network.png</code> and replace this box with<br>
 <code>![DevTools showing only ciphertext in the request](/screenshots/devtools-network.png)</code>
 </div>
@@ -248,7 +248,7 @@ Let's break it down:
 - **`overlay(... placing 'A' or 'B' ...)`**: replaces that one character with a different letter.
 - **Output:** `UPDATE 1`. The server accepted it, because this bypassed the API entirely.
 
-Now reload bob's window and unlock with his passphrase. **What you should see:** the first message in red: *"This message could not be decrypted with your key."* The other messages are untouched, still **✓ Verified**.
+Now reload bob's window and unlock with his passphrase. **What you should see:** the first message in red: *"This message could not be decrypted with your key."* The other messages are untouched, still **Verified**.
 
 ![bob's chat. The first message shows in red "This message could not be decrypted with your key."; the others show Verified](/screenshots/tampered.png)
 

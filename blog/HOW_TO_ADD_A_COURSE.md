@@ -23,7 +23,7 @@ blog/
     │   └── index.md              ← lists all software development courses (automatic)
     ├── public/screenshots/       ← images (use them as /screenshots/name.png)
     └── .vitepress/
-        ├── courses.mjs           ← ⭐ THE LIST OF ALL COURSES AND LESSONS
+        ├── courses.mjs           ← the list of all courses and lessons (edit this one)
         └── config.mjs            ← site settings (you rarely need this)
 ```
 
