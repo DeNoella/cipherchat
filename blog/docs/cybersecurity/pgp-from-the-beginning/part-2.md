@@ -525,4 +525,4 @@ ECC keys are much smaller and faster to generate for the same strength, which ma
 - **Passphrases** keep the private key locked on your device. It's unlocked in memory only and never sent to the server.
 - **OpenPGP** (RFC 9580) is the standard behind all of this. CipherChat uses armored text for messages and Curve25519 keys.
 
-**Next:** Part III: PGP inside CipherChat, end to end (coming soon).
+**Next:** [Part III: PGP inside CipherChat, end to end](./part-3)
