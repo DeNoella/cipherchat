@@ -134,7 +134,7 @@
     .slide { align-items: flex-start; }
     .label { display: none; }
     .bar { background: linear-gradient(rgba(251, 248, 243, 0), var(--off-white) 35%); padding-top: 22px; }
-    .slide.warm ~ .bar { background: none; }
+    body.warm-now .bar { background: linear-gradient(rgba(245, 238, 228, 0), var(--beige) 35%); }
   }
   @media (max-width: 520px) {
     .tech { grid-template-columns: 1fr; }
@@ -284,6 +284,7 @@ wV4D9v78+ubzcX8SAQdA/uZ1c…
     });
     [...dots.children].forEach((d, k) => d.classList.toggle('on', k === i));
     count.textContent = (i + 1) + ' / ' + slides.length;
+    document.body.classList.toggle('warm-now', slides[i].classList.contains('warm'));
     try { history.replaceState(null, '', '#' + (i + 1)); } catch (e) {}
   }
 
