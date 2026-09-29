@@ -265,4 +265,4 @@ The **password** signs you in to the server (the server stores a BCrypt hash of 
 
 In Part II, we'll see how PGP combines both kinds of keys to lock a real message, and how the "Verified" badge proves who sent it.
 
-**Next:** Part II: How PGP actually protects a message (coming soon).
+**Next:** [Part II: How PGP actually protects a message](./part-2)

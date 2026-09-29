@@ -48,12 +48,12 @@ export default withMermaid(
     ],
     markdown: {
       lineNumbers: true,
+      toc: { level: [2] },
       theme: 'catppuccin-latte',
     },
     mermaid: {
       theme: 'base',
       themeVariables: {
-        fontFamily: 'Inter, sans-serif',
         primaryColor: '#f6ede1',
         primaryBorderColor: '#c9b49a',
         primaryTextColor: '#4a3b30',
@@ -80,7 +80,7 @@ export default withMermaid(
         { text: 'About', link: '/about' },
       ],
       sidebar: sidebar(),
-      outline: { level: [2, 3], label: 'On this page' },
+      outline: { level: 2, label: 'On this page' },
       search: { provider: 'local' },
       socialLinks: [{ icon: 'github', link: 'https://github.com/angelabs-png' }],
       docFooter: { prev: 'Previous', next: 'Next' },

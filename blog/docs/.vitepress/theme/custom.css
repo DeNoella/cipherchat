@@ -157,10 +157,6 @@
   border-radius: 8px;
 }
 
-.vp-doc div[class*='language-'] code {
-  font-size: 14px;
-}
-
 /* Short quote notes for tips and warnings. */
 .vp-doc blockquote {
   border-left: 3px solid var(--terracotta);
