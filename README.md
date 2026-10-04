@@ -23,7 +23,7 @@ Every user has a matching **padlock** and **key**:
 | | In CipherChat | Who has it |
 |---|---|---|
 | 🔓 **Padlock** (public key) | Anyone can use it to *lock* a box addressed to you. | You hand out copies freely. The server keeps one so others can find it. |
-| 🔑 **Key** (private key) | The only thing that can *open* those boxes. | **Only you**, on your own device, protected by a passphrase. It is never uploaded. |
+| 🔑 **Key** (private key) | The only thing that can *open* those boxes. | **Only you**, on your own devices. The server keeps only a copy locked with your passphrase, which it cannot open. |
 
 When Alice writes to Bob, she puts the message in a box and snaps **Bob's padlock** shut on it. From that moment, only Bob's key can open it. Alice also snaps on a copy of **her own padlock**, so she can re-read what she sent.
 
@@ -42,7 +42,7 @@ Each padlock has a unique **fingerprint**, a 40-character code like `D04A 5925 0
 3. **Your browser locks the message** with Bob's padlock *and* your own, and **signs** it with your private key. This happens entirely on your device.
 4. **Only the locked box (ciphertext) is sent** to the server. The server double-checks that it really is locked for both of you, and refuses anything that looks like plain text.
 5. **The server stores the locked box** and instantly **pushes it to Bob** over a live connection.
-6. **Bob's browser unlocks it** with his private key (which is itself protected by his passphrase) and **checks your signature**, showing ✓ Verified.
+6. **Bob's browser unlocks it** with his private key (kept safely on his device) and **checks your signature**, showing ✓ Verified.
 
 Files work the same way: they are encrypted in your browser before upload, and decrypted in Bob's browser after download. Even the file's **name and type** are hidden inside the encrypted message.
 
@@ -70,7 +70,7 @@ flowchart LR
     subgraph Browser["Your browser (trusted)"]
         UI[Next.js app]
         PGP[OpenPGP.js<br/>encrypt · decrypt · sign · verify]
-        IDB[(IndexedDB<br/>passphrase-encrypted<br/>private key)]
+        IDB[(IndexedDB<br/>private key wrapped by a<br/>non-extractable device key)]
         UI --- PGP --- IDB
     end
     subgraph Server["Server (sees ciphertext only)"]
@@ -79,25 +79,67 @@ flowchart LR
         BC[BouncyCastle<br/>key + ciphertext checks]
         API --- BC
     end
-    DB[(PostgreSQL<br/>users · public keys · ciphertext)]
+    DB[(PostgreSQL<br/>users · public keys · ciphertext<br/>Vault-wrapped key backups)]
     FS[(Encrypted<br/>attachment blobs)]
+    V[(HashiCorp Vault<br/>server secrets · Transit)]
     UI -- "HTTPS + JWT" --> API
     UI -- "WSS + JWT" --> WS
     API --> DB
     API --> FS
+    API -- "AppRole" --> V
 ```
+
+---
+
+## Signing up and signing in
+
+You choose **two different secrets** when you create an account:
+
+| | What it is for | Who sees it |
+|---|---|---|
+| **Password** | Proves to the server that you are you. | Sent to the server at login (stored only as a BCrypt hash). |
+| **Key passphrase** | Locks the backup of your private key. | **Never leaves your browser.** Nobody can reset it, including us. |
+
+**Create an account (once).** Your browser makes your key pair. It then makes a **backup** of the private key locked with your passphrase, and sends the server only your public key and that locked backup. On your device, the private key is kept in the browser's storage, locked by a **device key** that the browser itself guards and never lets anyone read or copy out, not even CipherChat's own code.
+
+**Sign in on the same browser.** Username and password, that is all. The device key unlocks your private key automatically. Reloading the page does not ask for anything either.
+
+**Sign in on a new device or browser.** After your password, the app asks for your **key passphrase once**. It downloads your locked backup, unlocks it in the browser, and protects it with a new device key. From then on, that browser also needs only your password.
+
+**Signing out** keeps your key on that browser, so the next sign-in is quick. On a shared computer, choose **"Sign out and forget this device"**: the key is deleted from that browser, and the next sign-in there asks for the passphrase again.
+
+> **If you lose your passphrase**, every device you are already signed in on keeps working. But on a new device there is no way back in to your old messages: the server only holds a locked backup it cannot open. That is the price of nobody else being able to read them.
+
+```mermaid
+flowchart LR
+    S[Create account<br/>choose passphrase once] --> K[Key pair made in browser]
+    K --> D[Private key locked by a<br/>device key in this browser]
+    K --> B[Backup locked with passphrase<br/>sent to server]
+    L[Sign in, same browser] -->|password only| D
+    N[Sign in, new browser] -->|password + passphrase once| B
+    B -->|unlocked in the browser| D2[Private key locked by a<br/>new device key]
+```
+
+### HashiCorp Vault: the server's safe
+
+[Vault](https://developer.hashicorp.com/vault) is a dedicated "safe" for secrets. CipherChat uses it for the **server's own** secrets, not for users' keys:
+
+- **The server's passwords live in Vault**, not in files: the secret used to sign login tokens and the database password. The server logs in to Vault when it starts and is allowed to read only those values.
+- **A second lock on key backups.** Before a passphrase-locked backup is saved in the database, Vault's **Transit** feature locks it again with a key that never leaves Vault. Someone who steals a copy of the database gets nothing useful without also breaking into Vault.
+
+Why not keep users' private keys in Vault? Because Vault belongs to whoever runs the server. A key the server can unlock is a key the server could use, and the promise is that **only you** can read your messages. More detail: [docs/KEY_MANAGEMENT.md](docs/KEY_MANAGEMENT.md).
 
 ---
 
 ## Screenshots
 
-| Register (key created on your device) | Profile (fingerprint and key backup) |
+| Register (key created on your device) | Profile (fingerprint, key backup, this device) |
 |---|---|
 | ![Register](docs/screenshots/register.png) | ![Profile](docs/screenshots/profile.png) |
 
-| Wrong passphrase | Mobile |
+| New browser: wrong passphrase | Mobile |
 |---|---|
-| ![Wrong passphrase](docs/screenshots/unlock-error.png) | ![Mobile chat](docs/screenshots/mobile-chat.png) |
+| ![Wrong passphrase on a new browser](docs/screenshots/unlock-error.png) | ![Mobile chat](docs/screenshots/mobile-chat.png) |
 
 ---
 
@@ -108,7 +150,8 @@ flowchart LR
 | **OpenPGP** (the standard) | The "padlock and key" system used for all encryption and signatures. | A decades-old, openly reviewed standard (RFC 4880 / RFC 9580). Keys can be exported and used in other PGP tools such as GnuPG. |
 | **Curve25519 / Ed25519** | The specific maths behind each key pair. | Modern, fast, small keys, and designed to be hard to get wrong. |
 | **OpenPGP.js** | Does all encryption, decryption, signing and verification **inside your browser**. | The most widely used, independently audited OpenPGP library for JavaScript. |
-| **IndexedDB** | Stores your private key in your browser, still locked with your passphrase. | Built into every modern browser; keeps the key on your device only. |
+| **WebCrypto** (non-extractable AES-GCM key) | Creates the "device key" that locks your private key in this browser, so you do not type your passphrase at every sign-in. | Built into every browser. The key can be used but never read or exported, even by our own code. |
+| **IndexedDB** | Stores the device key and your locked private key in your browser. | Built into every modern browser; keeps the key on your device only. |
 | **Next.js** (React) | Builds the web pages you interact with. | Popular, well supported, and lets us set strict security headers per request. |
 | **TypeScript** | JavaScript with type checking. | Catches mistakes before they reach users. |
 | **Tailwind CSS** | Styling (the calm dark look). | Consistent design with very little custom CSS. |
@@ -118,12 +161,15 @@ flowchart LR
 | **BCrypt** | Scrambles account passwords before storing them. | Deliberately slow, so stolen password hashes are very hard to crack. |
 | **JWT** (jjwt) | A signed "entry pass" your browser shows on each request after login. | Stateless and simple, and works for both normal requests and the live connection. |
 | **BouncyCastle** | Lets the server **check** public keys (well-formed, not expired, not a private key by mistake) and confirm messages really are encrypted. It never decrypts anything. | The reference cryptography library for Java, with full OpenPGP support. |
+| **HashiCorp Vault** | The server's safe: holds the login-token secret and database password, and adds a second lock (Transit) to the stored key backups. | The industry standard for secrets. Keys never leave it, access is limited by policy and fully audited, and keys can be rotated without downtime. |
+| **Spring Cloud Vault** | Lets the Spring Boot server log in to Vault and read its secrets at start-up. | The official Spring integration, so secrets never sit in config files. |
 | **PostgreSQL** | Database for users, public keys, conversations and ciphertext. | Reliable, open source, and the industry standard. |
 | **Flyway** | Versioned database setup scripts. | Every environment gets exactly the same database structure. |
 | **H2** | An in-memory database used only by automated tests. | Tests run fast without needing a real database server. |
 | **JUnit 5, MockMvc, Playwright** | Automated tests for the server and a full browser test of the real flow. | They prove encryption, verification and access rules actually work. |
+| **Testcontainers** | Starts a real Vault in Docker during the server tests. | Tests the real Vault setup instead of a fake. |
 | **springdoc-openapi (Swagger UI)** | Interactive API documentation in the browser. | Lets reviewers try every endpoint without writing code. |
-| **Docker & Docker Compose** | Packages the database, server and website to start with one command. | "Works on my machine" becomes "works on every machine". |
+| **Docker & Docker Compose** | Packages the database, Vault, server and website to start with one command. | "Works on my machine" becomes "works on every machine". |
 
 ---
 
@@ -142,30 +188,33 @@ A modern browser (Chrome, Firefox, Edge or Safari) is needed to use the app.
 From the project folder:
 
 ```bash
-cp .env.example .env && docker compose up --build
+cp .env.example .env    # then replace each "replace-with-…" value with a random one (openssl rand -hex 24)
+docker compose up --build
 ```
 
-The first build takes a few minutes. When it is ready, open:
+The first build takes a few minutes. It starts five services: the database, **Vault** (in development mode), a one-off `vault-init` job that puts the server's secrets into Vault, the server and the website. When it is ready, open:
 
 | What | URL |
 |---|---|
 | **The app** | <http://localhost:3000> |
 | API | <http://localhost:8080> |
 | Swagger UI (API explorer) | <http://localhost:8080/swagger-ui.html> |
+| Vault UI (development only) | <http://localhost:8200> (sign in with `VAULT_DEV_ROOT_TOKEN` from `.env`) |
 
-> `.env.example` contains **development-only** placeholder secrets. For anything other than local testing, set a real `JWT_SECRET` (`openssl rand -base64 48`) and a strong `POSTGRES_PASSWORD` in `.env`.
+> The Vault in `docker-compose.yml` runs in **development mode** (in memory, already unlocked): it is for your own computer only. There is no `JWT_SECRET` to set any more: Vault generates it. Running Vault for real is described in [DEPLOYMENT_AND_SUGGESTIONS.md](DEPLOYMENT_AND_SUGGESTIONS.md#6-running-vault-in-production).
 
 To stop: `Ctrl+C`, then `docker compose down` (add `-v` to also delete the database and attachments).
 
 ### Option B: run backend and frontend manually
 
-**1. Start a PostgreSQL database.** Either use your own, or run one in Docker. Port **5433** is used so it does not clash with a PostgreSQL already installed on your machine (which usually owns 5432):
+**1. Start the database and Vault** in Docker (Vault is required: the server reads its secrets from it):
 
 ```bash
-docker run -d --name cipherchat-db -p 5433:5432 \
-  -e POSTGRES_DB=cipherchat -e POSTGRES_USER=cipherchat -e POSTGRES_PASSWORD=change-me \
-  postgres:17-alpine
+cp .env.example .env    # if you have not already; fill in random values
+docker compose up -d db vault vault-init
 ```
+
+The database listens on `127.0.0.1:5433` (so it does not clash with a PostgreSQL already installed on your machine) and Vault on `127.0.0.1:8200`.
 
 **2. Start the backend** (terminal 1). The database tables are created automatically on first start.
 
@@ -174,13 +223,11 @@ cd backend
 ./mvnw spring-boot:run
 ```
 
-`spring-boot:run` activates the `local` profile ([`application-local.yml`](backend/src/main/resources/application-local.yml)), which points at the `cipherchat-db` container above and uses a development-only JWT secret. No environment variables are needed, and any `DB_*` / `JWT_SECRET` exports in your shell are ignored.
+`spring-boot:run` activates the `local` profile ([`application-local.yml`](backend/src/main/resources/application-local.yml)). The server reads its Vault login from the `.env` file, then gets the database password and token secret from Vault. No environment variables are needed.
 
-> After a reboot the database container is stopped. Start it again with `docker start cipherchat-db`.
+> After a reboot, run `docker compose up -d db vault vault-init` again before starting the backend.
 
-> If startup fails with `password authentication failed for user "cipherchat"`, the backend is talking to a different PostgreSQL than the one you created. Check with `docker ps` that `cipherchat-db` is **Up** (not just *Created*) and listening on port 5433.
-
-The API runs on <http://localhost:8080> and Swagger UI on <http://localhost:8080/swagger-ui.html>. All settings are listed in [`backend/.env.example`](backend/.env.example).
+The API runs on <http://localhost:8080> and Swagger UI on <http://localhost:8080/swagger-ui.html>. To run the packaged jar yourself, see [`backend/.env.example`](backend/.env.example).
 
 **3. Start the frontend** (terminal 2):
 
@@ -195,9 +242,9 @@ Open <http://localhost:3000>. If the backend is not on `localhost:8080`, set `AP
 ### Running the tests
 
 ```bash
-cd backend && ./mvnw verify           # 47 unit + integration tests (auth, keys, messages, attachments, WebSocket)
+cd backend && ./mvnw verify           # 58 unit + integration tests (auth, keys, key backups, Vault, messages, attachments, WebSocket); needs Docker for Vault
 cd frontend && npm run lint && npm run build
-# Full browser test against a running stack with a fresh database (needs Google Chrome):
+# Full browser test against the running stack (needs Google Chrome); safe to repeat:
 cd frontend && npm run test:e2e
 ```
 
@@ -205,17 +252,21 @@ cd frontend && npm run test:e2e
 
 ## Using the app
 
-1. **Create an account.** Pick a username, a password (to sign in) and a separate **key passphrase** (to unlock your key). Your key is generated on your device.
-2. **Back up your key** from the Profile page. Without the backup file and your passphrase, nobody can recover your messages, including us.
-3. **Search for a user** on the Chats page and start writing.
-4. **Verify fingerprints** with your contact (Chat → "Key fingerprint") and mark them as verified.
-5. **On a new device**, sign in and import your backup file when asked.
+1. **Create an account.** Pick a username, a password (to sign in) and a separate **key passphrase**. Write the passphrase down somewhere safe: you will only be asked for it again on a new device.
+2. **Search for a user** on the Chats page and start writing.
+3. **Verify fingerprints** with your contact (Chat → "Key fingerprint") and mark them as verified.
+4. **Next time**, sign in with your username and password only.
+5. **On a new device or browser**, sign in and enter your key passphrase once when asked.
+6. *(Optional)* **Export a backup file** from the Profile page to keep offline. It is locked with your passphrase and also works with GnuPG.
 
-> Reloading the page locks your key again, and you re-enter your passphrase. This is deliberate: the unlocked key is only ever kept in memory.
+### Starting over with an empty database (development)
+
+`scripts/reset-dev-data.sh` deletes every user, key, conversation, message and attachment from the **local Docker** database (it cannot touch anything else). Afterwards, clear the site data for `http://localhost:3000` in your browser (DevTools → Application → *Clear site data*), so old keys are removed from the browser too.
 
 ---
 
 ## More documentation
 
 - [API_TESTING.md](API_TESTING.md): every endpoint with `curl` examples and expected responses, plus a Postman collection.
-- [DEPLOYMENT_AND_SUGGESTIONS.md](DEPLOYMENT_AND_SUGGESTIONS.md): how to deploy, and security features worth adding next.
+- [DEPLOYMENT_AND_SUGGESTIONS.md](DEPLOYMENT_AND_SUGGESTIONS.md): how to deploy (including Vault in production), and security features worth adding next.
+- [docs/KEY_MANAGEMENT.md](docs/KEY_MANAGEMENT.md): how private keys and secrets are protected, and why.

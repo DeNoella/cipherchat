@@ -1,6 +1,6 @@
 # Deployment and Suggestions
 
-> **Suggestions only.** Nothing in this document is implemented in the repository. It describes what a production deployment would need and which features would strengthen CipherChat's security story next.
+> **Suggestions only.** Apart from the list at the very end, nothing in this document is implemented in the repository. It describes what a production deployment would need and which features would strengthen CipherChat's security story next.
 
 ---
 
@@ -16,6 +16,7 @@ flowchart LR
     BE1 --> PG[(Managed PostgreSQL)]
     BE1 --> OS[(Object storage<br/>encrypted blobs)]
     BE1 -.-> R[(Redis<br/>rate limits · STOMP relay)]
+    BE1 -- "AppRole · TLS" --> V[HashiCorp Vault cluster<br/>KV v2 secrets · Transit]
 ```
 
 ### 1. Frontend hosting
@@ -58,14 +59,35 @@ Attachments are currently written to a local volume (`AttachmentStorage`). In pr
 - Enable **HSTS preload** once HTTPS is stable. The backend and frontend already send `Strict-Transport-Security`.
 - The browser crypto APIs that OpenPGP.js uses require a **secure context (HTTPS)** outside `localhost`.
 
-### 6. Environment variables
+### 6. Running Vault in production
+
+Docker Compose runs Vault in **dev mode**: everything in memory, already unsealed, a root token in `.env`, plain HTTP. That is only for a laptop. The backend depends on Vault for its JWT secret, its database credentials and the Transit key that protects key backups, so in production Vault must be run as seriously as the database.
+
+| Topic | What to do |
+|---|---|
+| **Hosting** | Use **HCP Vault Dedicated** (managed by HashiCorp) if you can. Self-hosted: a 3- or 5-node cluster with **Integrated Storage (Raft)**, spread over availability zones, on dedicated machines. Never `-dev`. |
+| **TLS** | Serve the API only over TLS (`listener "tcp" { tls_cert_file … }`) and set `VAULT_URI=https://vault.internal:8200`. Do not expose Vault to the internet; allow only the backend's network. |
+| **Unsealing** | Vault starts **sealed** after every restart. Use **auto-unseal** with a cloud KMS (AWS KMS, GCP Cloud KMS, Azure Key Vault) or an HSM, so restarts do not need humans. With manual Shamir unseal, give the key shares to different people and store them offline. |
+| **Initial root token** | Use it once to set up auth methods and policies, then `vault token revoke` it. Generate a new one with `vault operator generate-root` only for emergencies. Store recovery keys offline. |
+| **Configuration** | Apply what `vault/init.sh` does (KV v2 at `secret/`, the `cipherchat-key-backup` Transit key with `derived=true`, the `cipherchat-backend` policy, the AppRole) with **Terraform** (Vault provider) and review changes like code. In production the Transit key must **not** be `exportable` and must **not** allow plaintext backup (the script only does that for the dev volume). |
+| **Backend login (auth method)** | Prefer a platform identity so no secret ID exists at all: **Kubernetes auth** (service account token) or **AWS/GCP/Azure auth** (instance identity). If you keep **AppRole**: the role ID can live in config, but deliver the secret ID per deployment with **response wrapping** (single use, short TTL) from CI, bind it with `secret_id_bound_cidrs`, and give it a short `secret_id_ttl`. Spring Cloud Vault supports all of these (`spring.cloud.vault.authentication`). |
+| **Least privilege** | Keep the policy exactly as narrow as in `vault/init.sh`: read `secret/data/cipherchat`, `update` on `transit/encrypt` and `transit/decrypt` for one key. Admins use separate, audited identities (OIDC/SSO), never the backend's role. |
+| **Database credentials** | Next step after KV: the **database secrets engine**, which creates a short-lived PostgreSQL user per backend instance (`spring.cloud.vault.database.enabled=true`). Run Flyway with a separate migration role so table ownership stays stable. |
+| **Rotation** | Rotate the JWT secret by writing a new value to `secret/cipherchat` and restarting the backend (users sign in again). Rotate the Transit key on a schedule with `vault write -f transit/keys/cipherchat-key-backup/rotate`; old backups still decrypt, and a batch job can re-encrypt them with `transit/rewrap` before raising `min_decryption_version`. |
+| **Backups** | Take **Raft snapshots** (`vault operator raft snapshot save`, or automated snapshots in Vault Enterprise / HCP) at least daily, encrypt them, store them off-site, and **test restores**. Without Vault's data (or with a lost Transit key), every stored key backup becomes unreadable: users could then only sign in on devices that are already set up. Back up the database and Vault together. |
+| **Audit and monitoring** | Enable an **audit device** (`vault audit enable file …`) and ship the log to your SIEM; alert on denied requests from the backend's role and on any root token use. Scrape `/v1/sys/metrics` (Prometheus) and alert on `sealed`, leadership changes and Transit error rates. |
+| **Availability** | If Vault is down, the backend cannot start, new sign-ups that include a backup fail, and new-device logins fail with `503`. Logins on devices already set up and normal messaging keep working while the backend runs. |
+
+### 7. Environment variables
+
+The JWT secret and database credentials are **not** environment variables any more: the backend reads `app.jwt.secret`, `spring.datasource.username` and `spring.datasource.password` from Vault KV v2 at `secret/cipherchat`.
 
 | Variable | Service | Example / note |
 |---|---|---|
-| `JWT_SECRET` | backend | **Required.** 32+ random bytes, e.g. `openssl rand -base64 48`. Store in the host's secret manager. |
+| `VAULT_URI` | backend | `https://vault.internal:8200` |
+| `VAULT_ROLE_ID` / `VAULT_SECRET_ID` | backend | AppRole login (or switch `spring.cloud.vault.authentication` to `KUBERNETES`, `AWS_IAM`, … and drop these). Deliver the secret ID at deploy time, never in a file in the repository. |
 | `JWT_TTL` | backend | `PT12H` (ISO-8601 duration) |
 | `DB_URL` | backend | `jdbc:postgresql://host:5432/cipherchat?sslmode=require` |
-| `DB_USERNAME` / `DB_PASSWORD` | backend | From the managed database |
 | `CORS_ALLOWED_ORIGIN` | backend | `https://app.cipherchat.app`. Must exactly match the frontend origin. |
 | `ATTACHMENTS_DIR` | backend | Only for the disk storage; replaced by bucket settings with object storage |
 | `PORT` | backend | Most platforms inject this automatically |
@@ -73,7 +95,7 @@ Attachments are currently written to a local volume (`AttachmentStorage`). In pr
 
 Never commit real values. `.env.example` files document the names only.
 
-### 7. CI/CD with GitHub Actions
+### 8. CI/CD with GitHub Actions
 
 A suggested pipeline (`.github/workflows/ci.yml`):
 
@@ -87,6 +109,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "21", cache: maven }
+      # Integration tests start a real Vault with Testcontainers; GitHub's Ubuntu runners have Docker.
       - run: ./mvnw -B verify
         working-directory: backend
   frontend:
@@ -102,6 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # .env.example only holds placeholders; the dev Vault and its init job are part of the stack.
       - run: cp .env.example .env && docker compose up -d --build --wait
       - run: cd frontend && npm ci && CHROME_PATH=$(which google-chrome) npm run test:e2e
 ```
@@ -118,8 +142,8 @@ Ordered roughly by security value versus effort.
 |---|---|---|
 | 1 | **Threat model document** (STRIDE, data-flow diagram, trust boundaries) | Shows the design is deliberate. It would state plainly what the server *can* still do (see metadata, withhold or reorder messages, serve a malicious frontend) and how each risk is mitigated. |
 | 2 | **Fingerprint QR verification** | Scanning a contact's QR code in person is faster and less error-prone than comparing 40 hex characters. It builds on the existing trust-on-first-use pinning and "verified" state. |
-| 3 | **Forward secrecy and key rotation** | Today a stolen private key plus passphrase decrypts all past messages. The Double Ratchet (Signal protocol) or MLS gives per-message keys; a simpler step is periodic encryption-subkey rotation with a signed key history. |
-| 4 | **Zero-knowledge private key backup** | Let users store their *passphrase-encrypted* key on the server, derived with a strong KDF (Argon2id S2K), so they can log in on a new device without a file, while the server still cannot read it. |
+| 3 | **Forward secrecy and key rotation** | Today a stolen private key (from an unlocked device, or a backup plus its passphrase) decrypts all past messages. The Double Ratchet (Signal protocol) or MLS gives per-message keys; a simpler step is periodic encryption-subkey rotation with a signed key history. |
+| 4 | **Argon2 for the key backup** | The server-stored backup (now implemented) is locked with OpenPGP's iterated S2K for GnuPG compatibility. Switching to Argon2id S2K (RFC 9580, supported by OpenPGP.js) makes offline passphrase guessing far more expensive once GnuPG can read it. Pair it with a passphrase strength meter at sign-up. |
 | 5 | **2FA / TOTP and WebAuthn passkeys** | Protects accounts against password reuse and phishing. Passkeys are phishing-resistant by design. |
 | 6 | **Disappearing messages** | A per-conversation timer after which ciphertext is deleted server-side (scheduled job) and plaintext is dropped client-side. This reduces exposure if a device or key is compromised later. |
 | 7 | **Audit logging** | Append-only security events (logins, failed logins, key uploads or changes, rate-limit hits) with IP and user agent, never message content. Alert on anomalies such as a key change followed by a burst of messages. |
@@ -148,3 +172,5 @@ These are already implemented in the codebase:
 - Strict CORS, a nonce-based CSP and other security headers.
 - 404s instead of 403s to prevent id probing.
 - Non-root containers.
+- Passphrase asked once: the private key is kept on each device under a non-extractable WebCrypto AES-GCM key in IndexedDB; a passphrase-locked backup on the server sets up new devices.
+- HashiCorp Vault: JWT secret and database credentials from KV v2 via Spring Cloud Vault (AppRole, least-privilege policy), and Transit envelope encryption of key backups, tested against a real Vault with Testcontainers.
