@@ -15,9 +15,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByUsername(String username);
 
+    // Explicit ESCAPE: on PostgreSQL Hibernate otherwise renders "escape ''", so "\_" would not match "_".
     @Query("""
             select u from User u
-            where u.username like concat(:prefix, '%') and u.username <> :exclude
+            where u.username like concat(:prefix, '%') escape '\\' and u.username <> :exclude
             order by u.username
             """)
     List<User> searchByPrefix(@Param("prefix") String prefix, @Param("exclude") String exclude, Pageable pageable);
