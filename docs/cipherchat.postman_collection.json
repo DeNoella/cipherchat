@@ -35,6 +35,10 @@
     {
       "key": "attachmentId",
       "value": ""
+    },
+    {
+      "key": "daveToken",
+      "value": ""
     }
   ],
   "item": [
@@ -334,6 +338,143 @@
               "type": "string"
             }
           ]
+        }
+      }
+    },
+    {
+      "name": "06a Register dave (public key + passphrase-locked key backup)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('created (201) or already exists from a previous run (409)', () => pm.expect(pm.response.code).to.be.oneOf([201, 409]));",
+              "if (pm.response.code === 201) pm.test('backup stored', () => pm.expect(pm.response.json().hasKeyBackup).to.eql(true));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "register"
+          ]
+        },
+        "description": "What the web app sends at sign-up. keyBackup is locked with the passphrase 'test passphrase dave'; the server cannot open it.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"dave\",\n  \"password\": \"dave password 123\",\n  \"publicKey\": \"-----BEGIN PGP PUBLIC KEY BLOCK-----\\n\\nxjMEasK0VxYJKwYBBAHaRw8BAQdAuNm3xJplfxshgJDdPLH6MI5n+w/RtE2R\\nUMHmN7z6uz/NBGRhdmXCwBMEExYKAIUFgmrCtFcDCwkHCRDLtdKUK63VaUUU\\nAAAAAAAcACBzYWx0QG5vdGF0aW9ucy5vcGVucGdwanMub3JnRj/uxj4VbwTP\\no+JNlIwuE03G5ECGzODgvDtXcsrD0PoFFQoIDgwEFgACAQIZAQKbAwIeARYh\\nBHXh5PxEKIE1hWISaMu10pQrrdVpAACtFAD6A1+MToZPMeKHFNNMuxo7FKV0\\nhGm7RBpnrTg/5NcyVboBAMWb+4xcQt+A1l+jB+y8KD/vJYBVSH/G2yahJt2g\\nKI4AzjgEasK0VxIKKwYBBAGXVQEFAQEHQHPfjG4HxzBnMli7l/wvpKS4VFGJ\\nJkdoWIyxkZm0D3AUAwEIB8K+BBgWCgBwBYJqwrRXCRDLtdKUK63VaUUUAAAA\\nAAAcACBzYWx0QG5vdGF0aW9ucy5vcGVucGdwanMub3JnKiHXE50BxPOS/IVK\\nXS2i+djC96QR3r6a2+waKTKp2PYCmwwWIQR14eT8RCiBNYViEmjLtdKUK63V\\naQAAmuEA/1nciJTXePIFFPQX9utvq3L32YiNKwxWN/5TjihcAaeZAQDUNs16\\nzYq2nXKjPjOvigCF+6jrYHYKbwPAmPwRlK8oAA==\\n=zQpT\\n-----END PGP PUBLIC KEY BLOCK-----\\n\",\n  \"keyBackup\": \"-----BEGIN PGP PRIVATE KEY BLOCK-----\\n\\nxYYEasK0VxYJKwYBBAHaRw8BAQdAuNm3xJplfxshgJDdPLH6MI5n+w/RtE2R\\nUMHmN7z6uz/+CQMIp+14kjS/KBv/oqWkM8niupUNyifpu6MbwSWanc1GW36I\\nIgas8dkasH0fcyro3l7U4Jys20Q/ZWMWfodhTmS2zBihM606vIGDqtnMhf+1\\nus0EZGF2ZcLAEwQTFgoAhQWCasK0VwMLCQcJEMu10pQrrdVpRRQAAAAAABwA\\nIHNhbHRAbm90YXRpb25zLm9wZW5wZ3Bqcy5vcmdGP+7GPhVvBM+j4k2UjC4T\\nTcbkQIbM4OC8O1dyysPQ+gUVCggODAQWAAIBAhkBApsDAh4BFiEEdeHk/EQo\\ngTWFYhJoy7XSlCut1WkAAK0UAPoDX4xOhk8x4ocU00y7GjsUpXSEabtEGmet\\nOD/k1zJVugEAxZv7jFxC34DWX6MH7LwoP+8lgFVIf8bbJqEm3aAojgDHiwRq\\nwrRXEgorBgEEAZdVAQUBAQdAc9+MbgfHMGcyWLuX/C+kpLhUUYkmR2hYjLGR\\nmbQPcBQDAQgH/gkDCEFN3njcphiq/7vss+KHoVcNzRYjel8HGYtnxDNd6FzY\\nlqAf60qUWgm7OrmTbr70B3QAvja00A87tDgLT4dtxmBk1tVeoAvU85UJs4aY\\noG7CvgQYFgoAcAWCasK0VwkQy7XSlCut1WlFFAAAAAAAHAAgc2FsdEBub3Rh\\ndGlvbnMub3BlbnBncGpzLm9yZyoh1xOdAcTzkvyFSl0tovnYwvekEd6+mtvs\\nGikyqdj2ApsMFiEEdeHk/EQogTWFYhJoy7XSlCut1WkAAJrhAP9Z3IiU13jy\\nBRT0F/brb6ty99mIjSsMVjf+U44oXAGnmQEA1DbNes2Ktp1yoz4zr4oAhfuo\\n62B2Cm8DwJj8EZSvKAA=\\n=eQ8j\\n-----END PGP PRIVATE KEY BLOCK-----\\n\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      }
+    },
+    {
+      "name": "06b Login dave",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('has a key backup', () => pm.expect(pm.response.json().hasKeyBackup).to.eql(true));",
+              "pm.collectionVariables.set('daveToken', pm.response.json().token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"dave\",\n  \"password\": \"dave password 123\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      }
+    },
+    {
+      "name": "06c Get my key backup (dave, new device)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('still passphrase-locked OpenPGP key', () => pm.expect(pm.response.json().keyBackup).to.include('BEGIN PGP PRIVATE KEY BLOCK'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{daveToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/keys/me/backup",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "keys",
+            "me",
+            "backup"
+          ]
+        },
+        "description": "The server removes only its Vault Transit layer. The browser unlocks the result with the passphrase.",
+        "auth": {
+          "type": "noauth"
         }
       }
     },

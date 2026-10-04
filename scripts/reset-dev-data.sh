@@ -29,7 +29,7 @@ fi
 counts() {
   docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -At -F ' ' -c \
     "select (select count(*) from users), (select count(*) from conversations),
-            (select count(*) from messages), (select count(*) from attachments);"
+            (select count(*) from messages), (select count(*) from attachments);" </dev/null
 }
 read -r USERS CONVERSATIONS MESSAGES ATTACHMENTS < <(counts)
 echo "Local dev database '$DB_NAME' (Docker Compose service 'db') currently has:"

@@ -1,19 +1,19 @@
 # API Testing Guide
 
-Every CipherChat endpoint, in the order you would naturally test them: **register → login → upload key → find users → start a conversation → upload an attachment → send a message → read history → download → WebSocket**.
+Every CipherChat endpoint, in the order you would naturally test them: **register → login → upload key → key backup → find users → start a conversation → upload an attachment → send a message → read history → download → WebSocket**.
 
 All example responses below were captured from a real run against `docker compose up`. Tokens, keys and ciphertext are shortened with `…`.
 
 - [Before you start](#before-you-start)
 - [Error format](#error-format-all-endpoints)
-- [1. Register](#1-register) · [2. Login](#2-login) · [3. Upload your public key](#3-upload-your-public-key) · [4. Get a user's public key](#4-get-a-users-public-key) · [5. Search users](#5-search-users) · [6. Start a conversation](#6-start-a-conversation) · [7. List conversations](#7-list-conversations) · [8. Upload an attachment](#8-upload-an-encrypted-attachment) · [9. Send a message](#9-send-a-message) · [10. Read history](#10-read-message-history) · [11. Download an attachment](#11-download-an-attachment) · [12. WebSocket](#12-real-time-delivery-websocket--stomp) · [13. Health](#13-health-check)
+- [1. Register](#1-register) · [2. Login](#2-login) · [3. Upload your public key](#3-upload-your-public-key) · [3a. Upload your key backup](#3a-upload-your-key-backup) · [3b. Download your key backup](#3b-download-your-key-backup-new-device) · [4. Get a user's public key](#4-get-a-users-public-key) · [5. Search users](#5-search-users) · [6. Start a conversation](#6-start-a-conversation) · [7. List conversations](#7-list-conversations) · [8. Upload an attachment](#8-upload-an-encrypted-attachment) · [9. Send a message](#9-send-a-message) · [10. Read history](#10-read-message-history) · [11. Download an attachment](#11-download-an-attachment) · [12. WebSocket](#12-real-time-delivery-websocket--stomp) · [13. Health](#13-health-check)
 - [Testing with Swagger UI](#testing-with-swagger-ui) · [Testing with Postman](#testing-with-postman)
 
 ---
 
 ## Before you start
 
-1. Start the stack: `cp .env.example .env && docker compose up --build` (or run the backend manually, see the README).
+1. Start the stack: `cp .env.example .env && docker compose up --build` (or run the backend manually, see the README). Put random values in `.env` first; the stack includes a dev-mode Vault that the backend needs to start.
 2. Run the commands from the **repository root**, so the sample files in [`docs/samples/`](docs/samples) resolve.
 3. You need `curl` and [`jq`](https://jqlang.github.io/jq/).
 
@@ -31,6 +31,8 @@ The server **refuses plaintext**. Keys must be real OpenPGP public keys, and mes
 | `bob.pub.asc` | Bob's public key |
 | `alice-to-bob.asc` | An armored message signed by Alice, encrypted to Alice **and** Bob |
 | `alice-to-bob.bin` | A binary encrypted "file" (for attachments), encrypted to Alice and Bob |
+| `dave.pub.asc` | Dave's public key (for the key backup steps) |
+| `dave.key-backup.asc` | Dave's private key **locked with the passphrase** `test passphrase dave`: what the browser uploads as a key backup |
 
 > Want to use your own key instead? With GnuPG: `gpg --quick-gen-key you ed25519 sign never`, then `gpg --quick-add-key <FPR> cv25519 encr never`, then `gpg --armor --export you`. To encrypt a message: `echo hi | gpg --armor --encrypt --sign -r bob -r you`.
 
@@ -57,7 +59,7 @@ Every error, including 401/403 from the security layer, has the same JSON shape 
 
 ## 1. Register
 
-Creates an account and returns a JWT. `publicKey` is optional (the web app sends it; here we add Alice's key in step 3 and register Bob with his key directly).
+Creates an account and returns a JWT. `publicKey` and `keyBackup` are optional (the web app sends both; here we add Alice's key in step 3, register Bob with his key directly, and Dave with key + backup in step 3a).
 
 | | |
 |---|---|
@@ -71,7 +73,7 @@ Creates an account and returns a JWT. `publicKey` is optional (the web app sends
 { "username": "alice", "password": "correct horse battery" }
 ```
 
-Rules: username is 3–32 characters from `[A-Za-z0-9_]` (stored lowercase); password is 10–72 characters; `publicKey` is an optional ASCII-armored public key.
+Rules: username is 3–32 characters from `[A-Za-z0-9_]` (stored lowercase); password is 10–72 characters; `publicKey` is an optional ASCII-armored public key; `keyBackup` is an optional passphrase-locked private key that must match `publicKey` (see [3a](#3a-upload-your-key-backup)).
 
 **curl**
 
@@ -95,7 +97,8 @@ curl -s -X POST $API/api/auth/register \
   "tokenType": "Bearer",
   "expiresIn": 43200,
   "username": "alice",
-  "hasPublicKey": false
+  "hasPublicKey": false,
+  "hasKeyBackup": false
 }
 ```
 
@@ -103,7 +106,8 @@ With a key (Bob):
 
 ```json
 { "token": "eyJhbGciOiJIUzI1NiJ9…", "tokenType": "Bearer", "expiresIn": 43200,
-  "username": "bob", "hasPublicKey": true, "fingerprint": "4F31BC122A5884A3268BA26BF76507735FAC07F9" }
+  "username": "bob", "hasPublicKey": true, "fingerprint": "4F31BC122A5884A3268BA26BF76507735FAC07F9",
+  "hasKeyBackup": false }
 ```
 
 **Common errors**
@@ -112,6 +116,8 @@ With a key (Bob):
 |---|---|---|
 | 400 | Invalid username/password | `Validation failed` + `fieldErrors` |
 | 400 | `publicKey` is not a valid public key | e.g. `Malformed OpenPGP public key` |
+| 400 | `keyBackup` is not passphrase-locked or does not match `publicKey` | see [3a](#3a-upload-your-key-backup) |
+| 503 | Vault is unreachable while storing `keyBackup` | `Key backup storage is unavailable. Try again in a moment.` |
 | 409 | Username taken (case-insensitive) | `Username is already taken` |
 | 429 | More than 20 auth requests per minute from your IP | `Too many attempts. Try again later.` |
 
@@ -238,6 +244,98 @@ curl -s -X PUT $API/api/keys/me \
 curl -s -X PUT $API/api/keys/me -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"publicKey":"-----BEGIN PGP PRIVATE KEY BLOCK-----\n..."}' | jq .message
 ```
+
+---
+
+## 3a. Upload your key backup
+
+Stores your **private key locked with your key passphrase**, so you can sign in on a new device with only your password and passphrase. The web app does this automatically at sign-up (in the `keyBackup` field of register). The server **cannot open** the backup. It checks with BouncyCastle that:
+
+- it is exactly one OpenPGP private key, and **every secret key is locked with a passphrase** (an unprotected key would be a usable private key on the server, so it is refused);
+- its fingerprint matches your current public key.
+
+Then it adds a second lock with **Vault Transit** (envelope encryption, bound to your user ID) and stores only that ciphertext (`vault:v1:…`) in the database. Replacing your public key with a different one deletes the old backup.
+
+| | |
+|---|---|
+| **Method / URL** | `PUT /api/keys/me/backup` |
+| **Headers** | `Authorization: Bearer $TOKEN`, `Content-Type: application/json` |
+
+**Request body**
+
+```json
+{ "keyBackup": "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nxYYEasK0VxYJKwYBBAHaRw8BAQdA…\n-----END PGP PRIVATE KEY BLOCK-----\n" }
+```
+
+**curl** (Dave: register with public key + backup in one call, as the web app does, then replace the backup)
+
+```bash
+curl -s -X POST $API/api/auth/register -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg k "$(cat docs/samples/dave.pub.asc)" --arg b "$(cat docs/samples/dave.key-backup.asc)" \
+        '{username:"dave",password:"dave password 123",publicKey:$k,keyBackup:$b}')" | jq
+DAVE_TOKEN=$(curl -s -X POST $API/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"dave","password":"dave password 123"}' | jq -r .token)
+
+curl -s -X PUT $API/api/keys/me/backup \
+  -H "Authorization: Bearer $DAVE_TOKEN" -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg b "$(cat docs/samples/dave.key-backup.asc)" '{keyBackup:$b}')" | jq
+```
+
+**Expected:** register returns `201` with `"hasPublicKey": true` and `"hasKeyBackup": true`; the upload returns `200 OK`:
+
+```json
+{
+  "fingerprint": "75E1E4FC4428813585621268CBB5D2942BADD569",
+  "keyBackup": "-----BEGIN PGP PRIVATE KEY BLOCK-----…",
+  "updatedAt": "2026-10-04T21:25:55.346111066Z"
+}
+```
+
+**Common errors**
+
+| Status | Sent | `message` |
+|---|---|---|
+| 400 | A private key without a passphrase | `Key backup must be locked with a passphrase. Never upload an unprotected private key` |
+| 400 | A backup of a different key | `Key backup does not match your public key` |
+| 400 | No public key on the account yet | `Upload your public key before its backup` |
+| 400 | A public key, garbage, or two keys | e.g. `Expected an ASCII-armored OpenPGP private key backup` |
+| 401 | Missing/invalid token | `Authentication required` |
+| 503 | Vault unreachable | `Key backup storage is unavailable. Try again in a moment.` |
+
+To see what the database really holds (only the Vault ciphertext, never the OpenPGP block):
+
+```bash
+docker compose exec db psql -U cipherchat -d cipherchat -c \
+  "select username, left(key_backup, 30) from users where key_backup is not null;"
+#  dave     | vault:v1:buiRA3i0fkd9WLM5EoasT…
+```
+
+---
+
+## 3b. Download your key backup (new device)
+
+What the web app calls when you sign in on a browser that does not have your key yet. The server removes only the Vault layer; you get back the backup **still locked with your passphrase**, and the browser unlocks it locally. A wrong passphrase is therefore detected in the browser, never on the server.
+
+| | |
+|---|---|
+| **Method / URL** | `GET /api/keys/me/backup` |
+| **Headers** | `Authorization: Bearer $TOKEN` |
+
+```bash
+curl -s $API/api/keys/me/backup -H "Authorization: Bearer $DAVE_TOKEN" | jq -r .keyBackup > dave-backup.asc
+# Prove it is still passphrase-locked (asks for "test passphrase dave"):
+gpg --import dave-backup.asc
+```
+
+**Expected: `200 OK`** with the same JSON shape as 3a.
+
+**Common errors**
+
+| Status | `message` |
+|---|---|
+| 404 | `No key backup is stored for this account` |
+| 401 | `Authentication required` |
+| 503 | `Key backup storage is unavailable. Try again in a moment.` (Vault down, or the stored ciphertext cannot be decrypted) |
 
 ---
 
@@ -605,7 +703,7 @@ Import [`docs/cipherchat.postman_collection.json`](docs/cipherchat.postman_colle
 - The requests are numbered in the same order as this guide. **Login** requests store `token`/`bobToken` automatically, and **Upload attachment** stores `attachmentId`.
 - Bodies that need a key or ciphertext already contain the sample values from `docs/samples/`. For the attachment upload, select `docs/samples/alice-to-bob.bin` in the `file` field (Postman cannot embed files).
 - Run the whole collection with the **Collection Runner**. Each request has tests that check the expected status code. It can be re-run against the same database: the two register requests accept `201` (created) or `409` (already exists from a previous run).
-- Or from the command line, from the repository root (17 requests and 18 assertions, all passing on a fresh stack):
+- Or from the command line, from the repository root (20 requests, all passing on a fresh stack):
 
   ```bash
   npx newman run docs/cipherchat.postman_collection.json --working-dir .
@@ -613,5 +711,5 @@ Import [`docs/cipherchat.postman_collection.json`](docs/cipherchat.postman_colle
 
 ## Automated tests
 
-- `cd backend && ./mvnw verify`: 47 JUnit 5 / MockMvc tests cover every endpoint above, including all the error cases, the rate limiter and the WebSocket handshake.
+- `cd backend && ./mvnw verify`: 58 JUnit 5 / MockMvc tests cover every endpoint above, including all the error cases, the rate limiter and the WebSocket handshake. They start a real Vault in Docker with Testcontainers (Docker must be running), configure it with `vault/init.sh`, and check that secrets come from Vault, that backups are stored as Transit ciphertext bound to their user, that key rotation keeps old backups readable, and that the backend's Vault policy allows nothing else.
 - `cd frontend && npm run test:e2e`: a real-browser run of the complete encrypted flow.
