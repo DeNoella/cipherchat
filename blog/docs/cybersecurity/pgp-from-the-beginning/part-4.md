@@ -17,6 +17,7 @@ I assume nothing. You don't need to know Java or Spring Boot. You've seen *what*
 - [Spring WebSocket and STOMP](https://docs.spring.io/spring-framework/reference/web/websocket/stomp.html)
 - [Flyway documentation](https://documentation.red-gate.com/flyway)
 - [BouncyCastle Java](https://www.bouncycastle.org/documentation/)
+- [Spring Cloud Vault](https://docs.spring.io/spring-cloud-vault/reference/) and [Vault Transit](https://developer.hashicorp.com/vault/docs/secrets/transit): where the server's secrets come from, and the second lock on key backups.
 - [RFC 9580, the OpenPGP standard](https://www.rfc-editor.org/rfc/rfc9580)
 
 ## In this article we will cover
@@ -24,7 +25,8 @@ I assume nothing. You don't need to know Java or Spring Boot. You've seen *what*
 - **The restaurant.** One comparison we'll use for the whole article.
 - **The foundations.** What Spring Boot is, where the app starts, dependency injection, annotations, `pom.xml` and the folder tree.
 - **Every layer, one card each.** Configuration, Security, Controller, DTO, Service, Repository, Entity, Database, WebSocket, File storage, Exceptions, Tests and helper packages.
-- **The user journey through the layers.** Five real requests, traced class by class.
+- **Where the secrets live: HashiCorp Vault.** How the server gets its JWT secret and database password, and how it adds a second lock to key backups.
+- **The user journey through the layers.** Six real requests, traced class by class.
 - **The big picture.** One architecture diagram, why encryption lives in the browser, a 1-minute script and 10 interview questions.
 
 [[toc]]
@@ -44,6 +46,7 @@ A request to CipherChat is like an order in a restaurant. We'll use this all the
 | Kitchen rules | **Configuration** | `application.yml`, `AppProperties`, `WebSocketConfig` |
 | Manager handling complaints | **Exception handler** | `GlobalExceptionHandler` |
 | Walkie-talkie | **WebSocket** | `WebSocketConfig`, `MessageRelay` |
+| The safe in the back office | **HashiCorp Vault** (outside the app) | `application.yml` (`vault://`), `KeyBackupEnvelope` |
 
 ```mermaid
 flowchart LR
@@ -139,7 +142,7 @@ Annotations are the `@Words` above classes and methods. They tell Spring what so
 
 ### `pom.xml`: the dependencies, and who uses them
 
-`pom.xml` is the shopping list Maven uses to download libraries ([`pom.xml`](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/pom.xml)). Spring Boot is version 3.5.16, on Java 21.
+`pom.xml` is the shopping list Maven uses to download libraries ([`pom.xml`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/pom.xml)). Spring Boot is version 3.5.16, on Java 21.
 
 | Dependency | What it brings | Layer that uses it |
 | --- | --- | --- |
@@ -154,7 +157,9 @@ Annotations are the `@Words` above classes and methods. They tell Spring what so
 | `bcprov-jdk18on`, `bcpg-jdk18on` (BouncyCastle 1.86) | Reading OpenPGP keys and messages | Service (`OpenPgpInspector`) |
 | `jjwt-api`, `jjwt-impl`, `jjwt-jackson` (0.12.7) | Creating and checking JWTs | Security (`JwtService`) |
 | `springdoc-openapi-starter-webmvc-ui` | Swagger UI | Configuration (`OpenApiConfig`) |
+| `spring-cloud-starter-vault-config` (Spring Cloud 2025.0) | Logs in to HashiCorp Vault, loads secrets as properties, `VaultTemplate` for Transit | Configuration, Service (`KeyBackupEnvelope`) |
 | `spring-boot-starter-test`, `spring-security-test`, `h2` | JUnit, MockMvc, in-memory database | Tests |
+| `testcontainers` `vault`, `junit-jupiter` | A real Vault in Docker during tests | Tests (`VaultTestExtension`) |
 
 ### The backend folder tree
 
@@ -170,9 +175,12 @@ backend/src/main/java/com/cipherchat/
 ├── model/         ← what's in the pantry: @Entity classes (User, Conversation, Message, Attachment)
 └── exception/     ← the complaints manager: error types and the global handler
 backend/src/main/resources/
-├── application.yml          ← main settings (reads environment variables)
+├── application.yml          ← main settings; secrets are imported from Vault (vault://)
 ├── application-local.yml    ← dev settings for ./mvnw spring-boot:run
-└── db/migration/V1__init.sql ← the database tables
+└── db/migration/
+    ├── V1__init.sql          ← the database tables
+    └── V2__key_backup.sql    ← adds the (Vault-wrapped) key backup columns
+vault/init.sh                 ← (repository root) sets up Vault: KV secrets, Transit key, policy, AppRole
 ```
 
 ## The layers, one card each
@@ -186,9 +194,9 @@ backend/src/main/resources/
 
 **What's in it in CipherChat:**
 
-- [`application.yml`](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/src/main/resources/application.yml): database, JWT, CORS, limits. Values come from **environment variables** like `${JWT_SECRET:}`, with defaults after the colon.
+- [`application.yml`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/resources/application.yml): database URL, JWT lifetime, CORS, limits. Non-secret values come from **environment variables** like `${DB_URL:...}`, with defaults after the colon. **Secrets are not in it at all**: they come from HashiCorp Vault (below).
 - **Profiles**: `application-local.yml` (used automatically by `./mvnw spring-boot:run`) and `application-test.yml` (tests, H2 database). A profile file overrides the main one.
-- [`AppProperties`](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/src/main/java/com/cipherchat/config/AppProperties.java): the `app:` settings as a typed, validated Java record.
+- [`AppProperties`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/java/com/cipherchat/config/AppProperties.java): the `app:` settings as a typed, validated Java record.
 - `@Configuration` classes: `SecurityConfig` (security chain, CORS, BCrypt), `WebSocketConfig`, `OpenApiConfig`, `ClockConfig`.
 
 ```java:line-numbers=14
@@ -197,33 +205,75 @@ backend/src/main/resources/
 public record AppProperties(
         @Valid @NotNull Jwt jwt,
         @Valid @NotNull Cors cors,
+        @Valid @NotNull KeyBackup keyBackup,
         @Valid @NotNull Attachments attachments,
         @Valid @NotNull Messages messages,
         @Valid @NotNull LoginRateLimit loginRateLimit) {
 
     public record Jwt(
-            @NotBlank(message = "JWT_SECRET must be set") String secret,
+            @NotBlank(message = "app.jwt.secret must be set (it is read from Vault: secret/cipherchat)") String secret,
             @NotNull Duration ttl,
             @NotBlank String issuer) {
     }
 ```
 
+Let's break it down ([`AppProperties.java` lines 14–28](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/java/com/cipherchat/config/AppProperties.java#L14-L28)):
+
+- **`@ConfigurationProperties(prefix = "app")`**: copies everything under `app:` into this record, whichever source it comes from (the YAML file, or Vault).
+- **`@Validated`** + **`@NotBlank(...)`**: if the JWT secret didn't arrive from Vault, the app **refuses to start**. It fails fast instead of running insecurely.
+- **`KeyBackup keyBackup`**: the name of the Vault Transit key used for the second lock on key backups.
+- **`Duration ttl`**: `PT12H` in YAML becomes a Java `Duration` of 12 hours automatically.
+
+#### Where the secrets come from: HashiCorp Vault
+
+**Restaurant:** the safe in the back office. The kitchen rules on the wall say *"the alarm code is in the safe"*, never the code itself. The manager opens the safe with their own badge, and the badge only opens the drawers they need.
+
+[HashiCorp Vault](https://developer.hashicorp.com/vault/docs/what-is-vault) is a separate server whose only job is keeping secrets. **Spring Cloud Vault** connects Spring Boot to it ([`application.yml` lines 8–22](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/resources/application.yml#L8-L22) and [lines 95–97](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/resources/application.yml#L95-L97)):
+
+```yaml:line-numbers=8
+  cloud:
+    vault:
+      uri: ${VAULT_URI:http://localhost:8200}
+      fail-fast: true
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID:}
+        secret-id: ${VAULT_SECRET_ID:}
+      kv:
+        enabled: true
+        backend: secret
+        application-name: cipherchat
+        # Read only secret/cipherchat (the policy allows nothing else).
+        default-context: ""
+        profiles: ""
+```
+
+```yaml:line-numbers=95
+spring:
+  config:
+    import: vault://
+```
+
 Let's break it down:
 
-- **`@ConfigurationProperties(prefix = "app")`**: copies everything under `app:` in the YAML into this record.
-- **`@Validated`** + **`@NotBlank(message = "JWT_SECRET must be set")`**: if the secret is missing, the app **refuses to start**. It fails fast instead of running insecurely.
-- **`Duration ttl`**: `PT12H` in YAML becomes a Java `Duration` of 12 hours automatically.
+- **`spring.config.import: vault://`**: while the app starts, before any bean is created, Spring Cloud Vault logs in to Vault and loads the secret at `secret/cipherchat` as ordinary properties: `app.jwt.secret`, `spring.datasource.username` and `spring.datasource.password`. Code that reads them doesn't know they came from Vault.
+- **`authentication: APPROLE`**: the server logs in with a **role ID** and **secret ID**, like a username and password for machines. In production you'd use the platform's identity instead (Kubernetes, AWS), so there's no secret ID at all.
+- **`kv` / `backend: secret`**: Vault's **KV v2** engine, a versioned key-value store. You can see and roll back every change to a secret.
+- **`fail-fast: true`**: if Vault can't be reached, the app stops instead of starting without secrets.
+- The server's Vault **policy** (written by [`vault/init.sh`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/vault/init.sh)) allows exactly two things: read `secret/cipherchat`, and encrypt/decrypt with one Transit key. Nothing else.
+
+> **Note:** Docker Compose runs Vault in **dev mode** (in memory, already unsealed). That's for your laptop only. A real deployment runs a Vault cluster with TLS, auto-unseal and backups.
 
 **CORS** (which websites may call the API) is in [`SecurityConfig` lines 69–81](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/src/main/java/com/cipherchat/config/SecurityConfig.java#L69-L81): only the frontend origin (`http://localhost:3000` by default), only the `Authorization` and `Content-Type` headers, and no cookies.
 
-**Responsible for:** settings, wiring beans together. **Must NOT:** contain business logic, or hard-code real secrets.
+**Responsible for:** settings, wiring beans together. **Must NOT:** contain business logic, or hold any secret: secrets live in Vault.
 
-**PGP/security here:** the JWT secret must be set and (checked in `JwtService`) at least 32 bytes. Size limits for ciphertext and attachments live here.
+**PGP/security here:** the JWT secret (from Vault) must be set and (checked in `JwtService`) at least 32 bytes. Size limits for ciphertext and attachments live here.
 
 **Journey steps:** all of them. Every layer reads its settings from here.
 
 **Interview question:** *"How do you keep secrets out of the code?"*
-Answer: `application.yml` only references environment variables like `${JWT_SECRET:}`. `AppProperties` validates them, so the app won't start without a secret. The only fixed values are in the dev-only `local` profile.
+Answer: They're not in the code or in config files at all. At start-up, Spring Cloud Vault logs in to HashiCorp Vault with AppRole and loads the JWT secret and database credentials from KV v2. Vault generates the JWT secret itself, and the server's policy lets it read only its own path. `AppProperties` validates the values, so the app won't start without them.
 
 </div>
 
@@ -437,10 +487,12 @@ Answer: Security and stability. Entities hold internal fields like `passwordHash
 | `AuthService` | Register (hash password, apply key) and log in (BCrypt check, rate limits, issue JWT). Lowercases usernames. |
 | `UserService` | Username prefix search, max 20 results, excluding yourself. |
 | `PublicKeyService` | Store a validated key; fetch a key; check a message is addressed to both people. |
+| `KeyBackupService` | Check a key backup is passphrase-locked and matches the public key, store it, hand it back for a new device. |
+| `KeyBackupEnvelope` | The second lock: wraps and unwraps backups with Vault Transit. |
 | `ConversationService` | Get or create the one conversation between two users; check you're a participant. |
 | `MessageService` | Validate, store and announce messages; page through history. |
 | `AttachmentService` | Validate, store and serve encrypted files. |
-| `OpenPgpInspector` | All BouncyCastle checks. |
+| `OpenPgpInspector` | All BouncyCastle checks, including "is this backup really passphrase-locked?". |
 | `AttachmentStorage` | Read and write encrypted files on disk (card 10). |
 | `MessageRelay` | Push stored messages over WebSocket after commit (card 9). |
 
@@ -476,11 +528,47 @@ Let's break it down:
 
 After this, the method also checks that the user ID has a **valid self-signature**, that there's at least one **valid encryption subkey**, then re-encodes the key cleanly and computes the **fingerprint** with `Hex.toHexString(primary.getFingerprint()).toUpperCase()`.
 
+**Refusing a usable private key** ([`OpenPgpInspector.inspectKeyBackup`, lines 145–158](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/java/com/cipherchat/service/OpenPgpInspector.java#L145-L158)). The server can't open a key backup, but it can check the backup is locked:
+
+```java:line-numbers=145
+        PGPSecretKeyRing ring = readSingleSecretRing(armored);
+        Iterator<PGPSecretKey> keys = ring.getSecretKeys();
+        while (keys.hasNext()) {
+            PGPSecretKey key = keys.next();
+            if (key.isPrivateKeyEmpty()) {
+                continue; // stub without secret material (gnu-dummy): nothing to protect
+            }
+            if (key.getS2KUsage() == SecretKeyPacket.USAGE_NONE
+                    || key.getKeyEncryptionAlgorithm() == SymmetricKeyAlgorithmTags.NULL) {
+                throw new InvalidPgpDataException(
+                        "Key backup must be locked with a passphrase. Never upload an unprotected private key");
+            }
+        }
+        return Hex.toHexString(ring.getPublicKey().getFingerprint()).toUpperCase();
+```
+
+Let's break it down:
+
+- **`getSecretKeys()`**: a key has a signing key and an encryption subkey; every one is checked.
+- **`getS2KUsage() == USAGE_NONE`**: the "string-to-key" usage tells how a secret key is protected. `NONE` means it's stored in the clear, which would put a usable private key on the server, so it's refused.
+- **`return ... fingerprint`**: `KeyBackupService` then checks it equals the account's public key fingerprint.
+
+Then `KeyBackupService` hands the backup to `KeyBackupEnvelope`, which adds the outer lock with Vault Transit before anything is saved ([`KeyBackupService.java` lines 39–42](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/java/com/cipherchat/service/KeyBackupService.java#L39-L42)):
+
+```java:line-numbers=39
+    /** Wraps a validated backup with Vault Transit and attaches it. The user must already have an ID. */
+    public void store(User user, String armoredBackup) {
+        user.setKeyBackup(envelope.wrap(user.getId(), armoredBackup));
+    }
+```
+
+- **`envelope.wrap(user.getId(), ...)`**: Vault encrypts the (already passphrase-locked) backup with a key derived from the user's ID and returns `vault:v1:...`. That's what goes in the `key_backup` column. This is **envelope encryption**: the data is locked here, and the key that locks it stays in Vault.
+
 **Responsible for:** business rules, transactions, calling repositories. **Must NOT:** know about HTTP (no request or response objects), or ever decrypt anything.
 
 **PGP/security here:** the most important checks. Key validation, "is this really ciphertext", "is it addressed to both people", "is the caller in this conversation". Outsiders get `404`, so IDs can't be probed.
 
-**Journey steps:** all. Step 3 is `AuthService.register → PublicKeyService.applyTo → OpenPgpInspector.inspectPublicKey`.
+**Journey steps:** all. Step 3 is `AuthService.register → PublicKeyService.applyTo → OpenPgpInspector.inspectPublicKey`, then `KeyBackupService.validate → OpenPgpInspector.inspectKeyBackup` and, after the insert, `KeyBackupService.store → KeyBackupEnvelope.wrap`.
 
 **Interview question:** *"What does BouncyCastle do if the browser does all the encryption?"*
 Answer: It's the server's inspector, not its locksmith. It validates uploaded public keys (not private, not expired, not revoked, not weak, properly self-signed, has an encryption subkey), computes fingerprints, and reads which keys a message is addressed to. It never decrypts, because the server has no private keys.
@@ -588,7 +676,7 @@ Answer: So loading a message doesn't automatically load its whole conversation a
 **What it is:** PostgreSQL stores everything; **Flyway** creates and updates the tables from versioned SQL files.
 **Restaurant:** the pantry, and the pantry's floor plan, which only changes by approved written plans.
 
-**What's in it in CipherChat:** one migration, [`V1__init.sql`](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/src/main/resources/db/migration/V1__init.sql). Flyway runs it on first start and records it, so it never runs twice. `application.yml` sets `ddl-auto: validate`: Hibernate checks the entities match the tables, but never changes the database itself.
+**What's in it in CipherChat:** two migrations. [`V1__init.sql`](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/src/main/resources/db/migration/V1__init.sql) creates the tables; [`V2__key_backup.sql`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/resources/db/migration/V2__key_backup.sql) adds `key_backup` and `key_backup_updated_at` to `users`. Flyway runs each one once, in order, and records it, so it never runs twice. (Deleting data is never a migration: the dev-only `scripts/reset-dev-data.sh` does that, so it can't run against a real database.) `application.yml` sets `ddl-auto: validate`: Hibernate checks the entities match the tables, but never changes the database itself.
 
 ```mermaid
 erDiagram
@@ -834,7 +922,7 @@ Answer: Controller errors are caught by `@RestControllerAdvice`. A `401` happens
 **What it is:** code that checks the app works, run with `./mvnw test`.
 **Restaurant:** the health inspector, visiting before every opening.
 
-**What's in it in CipherChat:** 47 tests, all passing at this commit, in [`backend/src/test`](https://github.com/angelabs-png/cipherchat/tree/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/src/test/java/com/cipherchat).
+**What's in it in CipherChat:** 58 tests, all passing at this commit, in [`backend/src/test`](https://github.com/angelabs-png/cipherchat/tree/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/test/java/com/cipherchat).
 
 | Test class | Type | Layers covered |
 | --- | --- | --- |
@@ -842,13 +930,16 @@ Answer: Controller errors are caught by `@RestControllerAdvice`. A `401` happens
 | `FixedWindowRateLimiterTest` | Unit | Security: rate limiter windows |
 | `AuthControllerTest` | Integration (MockMvc) | Controller → Security → Service → Repository → H2; headers, CORS, rate limits |
 | `KeyAndUserControllerTest` | Integration | Key upload/fetch, user search |
+| `KeyBackupControllerTest` | Integration | Backup on register, download on a new device, unprotected or mismatched backups refused |
+| `VaultIntegrationTest` | Integration (real Vault in Docker) | Secrets loaded from Vault KV, backups stored as Transit ciphertext, bound to their user, key rotation, the policy's limits |
 | `MessageControllerTest` | Integration | Sending, rejecting plaintext, history, participants only |
 | `AttachmentControllerTest` | Integration | Upload, download, size limits, outsiders get 404 |
 | `WebSocketIntegrationTest` | Integration (real server, random port) | STOMP connect with/without token, real-time delivery |
 
 - **Unit tests** test one class alone, with no Spring and no database.
 - **Integration tests** start the whole app with `@SpringBootTest` and call it through **MockMvc**, a fake HTTP client that doesn't need a real network.
-- **H2** is an in-memory database in PostgreSQL mode. Flyway runs the same `V1__init.sql` on it.
+- **H2** is an in-memory database in PostgreSQL mode. Flyway runs the same migrations on it.
+- **Testcontainers** starts one real Vault in Docker for the whole test run (`VaultTestExtension`) and configures it with the project's own `vault/init.sh`, so every integration test gets its JWT secret and database credentials from Vault, exactly like production.
 - The PGP test data in `src/test/resources/pgp/` was generated by **OpenPGP.js** (`generate-fixtures.mjs`), so the server is tested against exactly what browsers produce.
 
 ([`AuthControllerTest.java` lines 122–136](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/src/test/java/com/cipherchat/controller/AuthControllerTest.java#L122-L136)):
@@ -875,7 +966,23 @@ Let's break it down:
 
 **Responsible for:** catching regressions. **Must NOT:** depend on the real PostgreSQL database or on each other.
 
-**PGP/security here:** most tests are security tests: plaintext rejected, private keys rejected, outsiders get 404, headers present, rate limits work.
+**PGP/security here:** most tests are security tests: plaintext rejected, private keys rejected, unprotected key backups rejected, outsiders get 404, headers present, rate limits work. The Vault test even logs in as the backend and checks what it is **not** allowed to do ([`VaultIntegrationTest.java` lines 115–124](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/test/java/com/cipherchat/vault/VaultIntegrationTest.java#L115-L124)):
+
+```java:line-numbers=115
+    void backendPolicyAllowsOnlyItsOwnSecretAndTransitKey() throws Exception {
+        String token = vault(ROOT_TOKEN, "write", "-field=token", "auth/approle/login",
+                "role_id=" + ROLE_ID, "secret_id=" + SECRET_ID).getStdout().trim();
+
+        assertThat(vault(token, "kv", "get", "secret/cipherchat").getExitCode()).isZero();
+        assertDenied(vault(token, "kv", "put", "secret/cipherchat", "app.jwt.secret=stolen"));
+        assertDenied(vault(token, "kv", "get", "secret/other-app"));
+        assertDenied(vault(token, "read", "transit/keys/" + TRANSIT_KEY));
+        assertDenied(vault(token, "write", "-f", "transit/keys/" + TRANSIT_KEY + "/rotate"));
+        assertDenied(vault(token, "read", "transit/export/encryption-key/" + TRANSIT_KEY));
+```
+
+- **`auth/approle/login`**: logs in exactly as the backend does.
+- **`kv get secret/cipherchat`** works, but **writing** it, reading **another** app's secret, or touching the Transit key itself (read, rotate, export) is **denied**. Least privilege, proved by a test.
 
 **Journey steps:** every step has at least one test.
 
@@ -918,7 +1025,9 @@ sequenceDiagram
     participant I as OpenPgpInspector (BouncyCastle)
     participant R as UserRepository
     participant J as JwtService
-    B->>C: POST /api/auth/register {username, password, publicKey}
+    participant KB as KeyBackupService
+    participant V as HashiCorp Vault
+    B->>C: POST /api/auth/register {username, password, publicKey, keyBackup}
     C->>C: @Valid RegisterRequest
     C->>S: register(request, clientIp)
     S->>G: beforeAttempt(ip) — max 20/min per IP
@@ -927,7 +1036,12 @@ sequenceDiagram
     S->>K: applyTo(user, publicKey)
     K->>I: inspectPublicKey(armored)
     I-->>K: fingerprint, algorithm, canonical key
+    S->>KB: validate(user, keyBackup)
+    KB->>I: inspectKeyBackup — passphrase-locked? same fingerprint?
     S->>R: saveAndFlush(user)
+    S->>KB: store(user, keyBackup)
+    KB->>V: transit/encrypt, context = user id
+    V-->>KB: vault:v1:...
     S->>J: issue(AuthUser)
     C-->>B: 201 {token, fingerprint, ...}
 ```
@@ -937,8 +1051,9 @@ sequenceDiagram
 3. `UserRepository.existsByUsername` checks the name is free, else `409`.
 4. BCrypt hashes the password.
 5. `PublicKeyService.applyTo` calls `OpenPgpInspector.inspectPublicKey`: BouncyCastle validates the key and computes its fingerprint. `User.setPublicKey` stores the canonical key and fingerprint.
-6. `saveAndFlush` writes the user; `JwtService.issue` creates the token.
-7. The browser compares the returned fingerprint with its own before continuing.
+6. `KeyBackupService.validate` calls `OpenPgpInspector.inspectKeyBackup`: the backup must be passphrase-locked and belong to the same key.
+7. `saveAndFlush` writes the user. Now that the user has an ID, `KeyBackupService.store` asks Vault Transit to wrap the backup (the ID is the encryption context), and the `vault:v1:...` text is saved when the transaction commits. If Vault is down, everything rolls back and the browser gets `503`.
+8. `JwtService.issue` creates the token. The browser compares the returned fingerprint with its own, then locks the private key with its device key.
 
 ### Logging in
 
@@ -962,16 +1077,45 @@ sequenceDiagram
     else correct
         S->>G: onSuccess(username) — reset counter
         S->>J: issue(AuthUser)
-        C-->>B: 200 {token, fingerprint, hasPublicKey}
+        C-->>B: 200 {token, fingerprint, hasPublicKey, hasKeyBackup}
     end
-    B->>B: Unlock private key with passphrase (never sent)
+    B->>B: Unlock private key with this browser's device key (no passphrase)
 ```
 
 1. `AuthService.login` checks both rate limits first (`429` if exceeded).
 2. `findByUsername` loads the user. If there's no such user, BCrypt still runs against `dummyHash`, so the response time gives nothing away.
 3. `passwordEncoder.matches` compares the password with the BCrypt hash.
 4. Failure: the per-username counter goes up, and the answer is `401` with a generic message. Success: the counter resets, and `JwtService.issue` signs a 12-hour token.
-5. The browser then unlocks the private key locally with the passphrase.
+5. The browser then unlocks the private key with its device key. No passphrase, and nothing about the key is sent.
+
+### Signing in on a new device
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as New browser
+    participant F as JwtAuthenticationFilter
+    participant C as KeyController
+    participant KB as KeyBackupService
+    participant R as UserRepository
+    participant E as KeyBackupEnvelope
+    participant V as HashiCorp Vault
+    Note over B: POST /api/auth/login as above,<br/>but no key on this browser
+    B->>F: GET /api/keys/me/backup + Bearer JWT
+    F->>C: getBackup(me)
+    C->>KB: get(me.id)
+    KB->>R: findById(id)
+    KB->>E: unwrap(id, "vault:v1:...")
+    E->>V: transit/decrypt, context = user id
+    V-->>E: backup, still passphrase-locked
+    C-->>B: 200 {fingerprint, keyBackup, updatedAt}
+    B->>B: Ask passphrase once, unlock, lock with a new device key
+```
+
+1. The login is the same as above. The browser finds no key for this account in its IndexedDB, so it shows **Set up this browser**.
+2. `GET /api/keys/me/backup` passes the JWT filter like any request; you can only ever get **your own** backup.
+3. `KeyBackupService.get` loads the user and asks `KeyBackupEnvelope.unwrap` to remove Vault's lock. A backup moved onto another user's row fails here, because the context (the user ID) is different.
+4. The response contains the backup **still locked with the passphrase**. The browser unlocks it with the passphrase the user types, checks the fingerprint, and protects it with a new device key.
 
 ### Sending a message over REST and delivering it over WebSocket
 
@@ -1089,9 +1233,9 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph Browser["Browser (Next.js) — all encryption happens here"]
-        UI["Screens: register, sign in,<br/>chats, profile"]
+        UI["Screens: register, sign in,<br/>set up this browser, chats, profile"]
         PGP["OpenPGP.js<br/>encrypt · sign · decrypt · verify"]
-        IDB[("IndexedDB<br/>locked private key,<br/>pinned fingerprints")]
+        IDB[("IndexedDB<br/>private key locked by a<br/>non-extractable device key,<br/>pinned fingerprints")]
         UI --- PGP --- IDB
     end
     subgraph Server["Spring Boot server — sees only ciphertext"]
@@ -1105,26 +1249,30 @@ flowchart TB
         SVC -. after commit .-> WS
         CTRL -. errors .-> EXC
     end
-    DB[("PostgreSQL<br/>users, conversations,<br/>messages (ciphertext)")]
+    DB[("PostgreSQL<br/>users, conversations,<br/>messages (ciphertext),<br/>vault:v1 key backups")]
     DISK[("Disk<br/>&lt;uuid&gt;.pgp files")]
+    VAULT[("HashiCorp Vault<br/>KV: JWT secret, DB login<br/>Transit: backup key")]
     PGP -->|"HTTPS: ciphertext + JWT"| SEC
     WS -->|"push ciphertext"| PGP
     REPO --> DB
     SVC --> DISK
+    SVC -->|"AppRole · wrap / unwrap"| VAULT
 ```
 
 ### Why encryption lives in the frontend, not in Spring Boot
 
-If Spring Boot encrypted messages, the server would have to see the plaintext first, and hold the keys. Then anyone who hacks the server, or runs it, could read everything. By encrypting in the browser, the private key and the plaintext never leave the user's device. The server can be fully compromised and still leak only ciphertext and metadata.
+If Spring Boot encrypted messages, the server would have to see the plaintext first, and hold the keys. Then anyone who hacks the server, or runs it, could read everything. By encrypting in the browser, a usable private key and the plaintext never leave the user's device. The server can be fully compromised and still leak only ciphertext, metadata and passphrase-locked key backups.
+
+The same reasoning is why users' private keys are **not** kept in Vault. Vault is excellent, but it belongs to whoever runs the server: a key the server can unlock is a key the server could use. So Vault protects the **server's own** secrets (JWT secret, database login) and adds a second lock to backups, while the passphrase lock stays with the user.
 
 ### A 1-minute script: "Explain the CipherChat backend architecture"
 
-> "CipherChat's backend is a Spring Boot 3 app on Java 21, in classic layers. Every request first passes Spring Security: a JWT filter checks the bearer token, login endpoints are rate-limited, and passwords are hashed with BCrypt. Thin REST controllers validate request DTOs with Bean Validation and hand off to services. The services hold the rules, and the important ones are about PGP: using BouncyCastle, the server validates uploaded public keys, computes fingerprints, and checks every message and file is real OpenPGP ciphertext addressed to both the sender and the recipient. It never decrypts, because it never has private keys. Spring Data JPA repositories store everything in PostgreSQL, with the schema managed by Flyway. After a message is committed, an event pushes it over WebSocket with STOMP, and the STOMP connection is authenticated with the same JWT. One global exception handler turns every error into the same safe JSON, with no stack traces. It's tested with MockMvc integration tests on H2, plus unit tests for the PGP inspector."
+> "CipherChat's backend is a Spring Boot 3 app on Java 21, in classic layers. Every request first passes Spring Security: a JWT filter checks the bearer token, login endpoints are rate-limited, and passwords are hashed with BCrypt. Thin REST controllers validate request DTOs with Bean Validation and hand off to services. The services hold the rules, and the important ones are about PGP: using BouncyCastle, the server validates uploaded public keys, computes fingerprints, and checks every message and file is real OpenPGP ciphertext addressed to both the sender and the recipient. It never decrypts, because it never has private keys. Spring Data JPA repositories store everything in PostgreSQL, with the schema managed by Flyway. After a message is committed, an event pushes it over WebSocket with STOMP, and the STOMP connection is authenticated with the same JWT. One global exception handler turns every error into the same safe JSON, with no stack traces. Secrets aren't in config: Spring Cloud Vault logs in to HashiCorp Vault with AppRole and loads the JWT secret and database credentials, and Vault Transit adds a second lock to each user's passphrase-locked key backup. It's tested with MockMvc integration tests on H2 against a real Vault in Testcontainers, plus unit tests for the PGP inspector."
 
 ### 10 Spring Boot interview questions
 
 ::: details 1. What is dependency injection, and how does CipherChat use it?
-Spring creates the objects (beans) and passes each class what it needs, instead of classes creating their own. CipherChat uses constructor injection everywhere, for example `AuthService` receives `UserRepository`, `PasswordEncoder`, `JwtService`, `LoginAttemptGuard` and `PublicKeyService`.
+Spring creates the objects (beans) and passes each class what it needs, instead of classes creating their own. CipherChat uses constructor injection everywhere, for example `AuthService` receives `UserRepository`, `PasswordEncoder`, `JwtService`, `LoginAttemptGuard`, `PublicKeyService` and `KeyBackupService`.
 :::
 
 ::: details 2. What's the difference between @Component, @Service and @Repository?
@@ -1152,7 +1300,7 @@ The advice catches exceptions from controllers. Authentication failures happen e
 :::
 
 ::: details 8. How do you configure different environments?
-With `application.yml` reading environment variables, and profile files that override it: `local` for `./mvnw spring-boot:run`, `test` for tests. `AppProperties` validates the settings at startup, so a missing JWT secret stops the app.
+With `application.yml` reading environment variables for normal settings, profile files that override it (`local` for `./mvnw spring-boot:run`, `test` for tests), and **secrets from HashiCorp Vault** via `spring.config.import: vault://`. `AppProperties` validates the settings at startup, so a missing JWT secret stops the app.
 :::
 
 ::: details 9. How does Spring Data write queries for you?
@@ -1167,7 +1315,8 @@ Three things are in memory today: the rate limiter, the WebSocket simple broker,
 
 - **Spring Boot** starts from `CipherChatApplication` and wires beans together with **constructor injection**.
 - Each **layer** has one job: Security guards, Controllers take orders, DTOs are the order slips, Services cook, Repositories fetch, Entities and Flyway define the pantry, WebSocket is the walkie-talkie, and the exception handler deals with complaints.
-- **PGP shows up** mostly in the Service layer (BouncyCastle checks) and Security (JWT on REST and STOMP). The server **never decrypts**.
+- **PGP shows up** mostly in the Service layer (BouncyCastle checks, including refusing unprotected key backups) and Security (JWT on REST and STOMP). The server **never decrypts** messages and never holds a usable private key.
+- **HashiCorp Vault** keeps the server's secrets (loaded by Spring Cloud Vault at start-up) and adds a Transit lock to key backups.
 - You can now trace any request, from the browser to the database and back, naming the real classes.
 
 **Next:** [Part V: Limitations, proof, and interview prep](./part-5)

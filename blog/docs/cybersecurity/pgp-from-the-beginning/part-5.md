@@ -22,7 +22,7 @@ I assume nothing, except that you've read Parts I to IV. This last part does thr
 
 - **Limitations and threats.** What can still go wrong, and what would improve it.
 - **See it with your own eyes.** Five hands-on checks with the running app, with the exact commands and output.
-- **Interview prep.** A 30-second pitch, a 2-minute PGP explanation, 20 questions with answers, and a glossary.
+- **Interview prep.** A 30-second pitch, a 2-minute PGP explanation, 21 questions with answers, and a glossary.
 
 [[toc]]
 
@@ -30,17 +30,25 @@ I assume nothing, except that you've read Parts I to IV. This last part does thr
 
 Every security design has limits. Knowing yours is what makes you credible.
 
-### Lost private key = lost messages
+### Lost passphrase = lost messages on new devices
 
-**The problem:** your private key exists only in your browser (IndexedDB) and in any backup file you exported. Clear your browser data without a backup, and every message sent to you is unreadable forever. Nobody can reset it, including the server.
+**The problem:** the server keeps a backup of your private key, but it's locked with your passphrase, and nobody can reset that. Forget the passphrase **and** lose every device that's already set up (or clear their site data), and every message sent to you is unreadable forever.
 
-**Where you see it:** right after registering, the Profile page warns: *"Back up your key now. It exists only in this browser."*
+**Where you see it:** right after registering, the Profile page warns: *"Remember your key passphrase. You will not need it to sign in on this browser, but you will need it once on any new device or browser. Nobody, including us, can reset it."*
 
-**What could improve it:** a zero-knowledge backup. The server stores your key still locked with your passphrase (using a strong key-derivation function like Argon2id), so you can sign in on a new device without a file, while the server still can't read it.
+**What CipherChat already does:** devices you've set up keep working without the passphrase, and you can export an extra backup file from **Profile**.
+
+### The server holds a locked backup
+
+**The problem:** to make new devices easy, the server stores your passphrase-locked backup. Someone who gets that backup can try passphrases offline, as fast as their hardware allows.
+
+**What CipherChat already does:** the backup is wrapped again by **HashiCorp Vault Transit** before it's stored, so a stolen database dump alone is useless. Getting it also needs your password (or access to Vault). Passphrases must be 12+ characters, and the passphrase lock uses OpenPGP's slowest standard setting.
+
+**What could improve it:** **Argon2id** for the passphrase lock (OpenPGP.js supports it; it's held back only because GnuPG 2.4 can't read it yet), and a passphrase strength meter.
 
 ### No forward secrecy
 
-**The problem:** every message sent to you is locked for the same long-term key. If an attacker ever gets your private key **and** your passphrase, they can decrypt **all** your past messages, from any stolen database copy.
+**The problem:** every message sent to you is locked for the same long-term key. If an attacker ever gets your private key (from an unlocked device, or from your backup plus your passphrase), they can decrypt **all** your past messages, from any stolen database copy.
 
 **What could improve it:** per-message keys, like the Signal protocol's Double Ratchet or MLS. A simpler step: rotate encryption subkeys regularly.
 
@@ -54,9 +62,9 @@ Every security design has limits. Knowing yours is what makes you credible.
 
 ### A compromised device, or the server sending bad code
 
-**The problem:** once unlocked, your private key is in the browser's memory. Malware on your computer, or a script injected into the page, could read it. And in any web app, the server sends the JavaScript that does the encryption. A compromised server could send a modified version.
+**The problem:** once unlocked, your private key is in the browser's memory, and the browser can unlock it again from its device key without asking you. Malware on your computer, or a script injected into the page, could use it. Anyone with your unlocked computer and your password can sign in. And in any web app, the server sends the JavaScript that does the encryption. A compromised server could send a modified version.
 
-**What CipherChat already does:** a strict, nonce-based Content-Security-Policy blocks injected scripts. Messages are rendered as text, never HTML. The key is locked again after every reload.
+**What CipherChat already does:** a strict, nonce-based Content-Security-Policy blocks injected scripts. Messages are rendered as text, never HTML. The device key is non-extractable, so the stored key can't be copied off the computer, and **Sign out and forget this device** deletes it on shared computers.
 
 **What could improve it:** signed, reproducible frontend builds (so users can check the code), hardware-backed keys (WebAuthn), and Trusted Types.
 
@@ -76,7 +84,7 @@ Every security design has limits. Knowing yours is what makes you credible.
 1. An attacker steals a full database backup. What can they read?
 
 ::: details Answer
-Metadata (usernames, who talks to whom, when, sizes), public keys, fingerprints and BCrypt password hashes. **Not** message content or attachments: those are ciphertext, and the private keys aren't there.
+Metadata (usernames, who talks to whom, when, sizes), public keys, fingerprints and BCrypt password hashes. **Not** message content or attachments: those are ciphertext. The key backups are there only as Vault ciphertext (`vault:v1:...`), useless without Vault, and still passphrase-locked underneath.
 :::
 
 2. Why is "no forward secrecy" a real risk?
@@ -94,14 +102,14 @@ Don't take my word for it. Here are five checks you can run yourself. Every outp
 Start the whole app with Docker. From the `cipherchat` folder:
 
 ```bash
-cp .env.example .env      # first time only
+cp .env.example .env      # first time only; replace each "replace-with-..." value with a random one
 docker compose up -d --build
 ```
 
 Let's break it down:
 
-- **`cp .env.example .env`**: creates the settings file with development values.
-- **`docker compose up -d --build`**: builds and starts three containers: `db` (PostgreSQL), `backend` (Spring Boot on port 8080) and `frontend` (Next.js on port 3000). `-d` runs them in the background.
+- **`cp .env.example .env`**: creates the settings file. It holds the database password and the dev Vault logins; there's no JWT secret in it, because Vault generates that.
+- **`docker compose up -d --build`**: builds and starts the containers: `db` (PostgreSQL), `vault` (HashiCorp Vault in dev mode), `vault-init` (a one-off job that puts the server's secrets into Vault), `backend` (Spring Boot on port 8080) and `frontend` (Next.js on port 3000). `-d` runs them in the background.
 
 > **Warning:** if you're already running the frontend yourself (`npm run dev`), stop it first. Otherwise port 3000 is taken, and Docker's frontend container can't start.
 
@@ -248,11 +256,30 @@ Let's break it down:
 - **`overlay(... placing 'A' or 'B' ...)`**: replaces that one character with a different letter.
 - **Output:** `UPDATE 1`. The server accepted it, because this bypassed the API entirely.
 
-Now reload bob's window and unlock with his passphrase. **What you should see:** the first message in red: *"This message could not be decrypted with your key."* The other messages are untouched, still **Verified**.
+Now reload bob's window (no passphrase needed). **What you should see:** the first message in red: *"This message could not be decrypted with your key."* The other messages are untouched, still **Verified**.
 
 ![bob's chat. The first message shows in red "This message could not be decrypted with your key."; the others show Verified](/screenshots/tampered.png)
 
 OpenPGP's integrity check noticed the change ("Modification detected") and refused to decrypt. The attacker can't change a word without being caught, and can't read anything either.
+
+### Bonus: the key backup is locked twice
+
+Look at what the database stores for alice's key backup:
+
+```bash
+docker compose exec db psql -U cipherchat -d cipherchat -c "SELECT username, left(key_backup, 30) FROM users;"
+```
+
+**What you should see:** only Vault ciphertext, never `-----BEGIN PGP PRIVATE KEY BLOCK-----`:
+
+```text
+ username |              left
+----------+--------------------------------
+ alice    | vault:v1:yoOtg6OITf4ADISYg+qh5
+ bob      | vault:v1:mMt+YqY5VeYj4H/P7Mk9y
+```
+
+That's the outer lock (Vault Transit). Now sign in as alice in a **third** window (a new browser profile, so it has no key yet). After the password, the app asks for her key passphrase **once**: the server removed only the Vault lock and sent back the backup still locked with her passphrase, which only her browser can open. Sign out, sign in again in that window, and the passphrase isn't asked any more.
 
 ### Bonus: what a swapped key looks like
 
@@ -286,7 +313,7 @@ Because integrity is checked in the receiver's browser. OpenPGP detects the modi
 
 Read it out loud until you can say it without looking.
 
-> "CipherChat is an end-to-end encrypted chat app. When you register, your browser generates an OpenPGP key pair with OpenPGP.js. Only the public key goes to the server, and the private key stays on your device, locked with a passphrase. Every message and file is encrypted and signed in the browser, so the Spring Boot server only ever stores ciphertext. The server uses BouncyCastle to reject anything that isn't real PGP ciphertext for both people, and pushes new messages over WebSocket. The receiver's browser decrypts them and shows a Verified badge when the signature checks out."
+> "CipherChat is an end-to-end encrypted chat app. When you register, your browser generates an OpenPGP key pair with OpenPGP.js. The private key stays on your device, locked by a key the browser won't let anyone read; the server only gets the public key and a backup locked with your passphrase, so you type that passphrase once at sign-up and again only on a new device. Every message and file is encrypted and signed in the browser, so the Spring Boot server only ever stores ciphertext. The server uses BouncyCastle to reject anything that isn't real PGP ciphertext for both people, and pushes new messages over WebSocket. The receiver's browser decrypts them and shows a Verified badge when the signature checks out."
 
 ### Explain PGP in 2 minutes
 
@@ -300,9 +327,9 @@ Read it out loud until you can say it without looking.
 >
 > Third, **trust**. How do you know a public key really belongs to someone? You compare its **fingerprint**, a hash of the key, through another channel. CipherChat remembers the first fingerprint it sees and warns you if it ever changes.
 >
-> Finally, the private key itself is stored encrypted with a **passphrase**, so a stolen key file is useless on its own."
+> Finally, the private key itself is protected: any copy that leaves your device is encrypted with a **passphrase**, so a stolen key file is useless on its own."
 
-### 20 likely interview questions
+### 21 likely interview questions
 
 ::: details 1. Why client-side encryption?
 So the server never sees plaintext or private keys. Even if the server is hacked, or the people running it are curious, they only get ciphertext and metadata. In CipherChat, `crypto.ts` is the only place encryption happens, and it runs in the browser.
@@ -313,7 +340,7 @@ HTTPS only protects data between the browser and the server. The server decrypts
 :::
 
 ::: details 3. What if a user forgets their passphrase?
-Their private key can't be unlocked, so old messages are lost. The server can't reset it, because it never had it. They'd need a new key pair. That's a deliberate trade-off: if the server could recover it, the server could also read it.
+Devices that are already set up keep working, because they unlock the key with their device key. But the backup can't be opened on a new device, and the server can't reset it, because it never had the passphrase. With no set-up device left, old messages are lost and they'd need a new key pair. That's a deliberate trade-off: if the server could recover it, the server could also read it.
 :::
 
 ::: details 4. Why ECC (Curve25519) over RSA?
@@ -337,11 +364,11 @@ Fingerprints. The browser computes the fingerprint itself, pins the first one it
 :::
 
 ::: details 9. What's the difference between the password and the passphrase?
-The password authenticates you to the server, which stores a BCrypt hash. The passphrase unlocks your private key in the browser and is never sent anywhere. The register form requires them to be different.
+The password authenticates you to the server on every sign-in; the server stores a BCrypt hash. The passphrase locks the backup of your private key, is asked only at sign-up and on a new device, and is never sent anywhere. The register form requires them to be different.
 :::
 
 ::: details 10. Where is the private key stored?
-Locked with the passphrase, in the browser's IndexedDB. When unlocked, it lives only in memory, and is gone after a reload. Users can export the locked key as a backup file.
+On each device, in IndexedDB, encrypted with AES-GCM under a **non-extractable WebCrypto device key**, so sign-in needs no passphrase. When in use it's in memory only. The only copy on the server is a backup locked with the passphrase and wrapped again by Vault Transit. Users can also export that locked backup as a file.
 :::
 
 ::: details 11. What happens if someone tampers with a message in the database?
@@ -377,11 +404,15 @@ A 403 would confirm the conversation or attachment exists. A 404 reveals nothing
 :::
 
 ::: details 19. How did you test the security properties?
-47 backend tests, all passing. For example: plaintext is rejected, a private key upload is rejected, a message not addressed to the recipient is rejected, outsiders get 404, login errors don't reveal whether a user exists, rate limits work, security headers are present, and WebSocket connects are refused without a token. The PGP test data was generated by OpenPGP.js, the same library as the browser.
+58 backend tests, all passing, run against a real Vault in Docker (Testcontainers). For example: plaintext is rejected, a private key upload is rejected, an unprotected key backup is rejected, the backend's Vault policy can't read anything but its own secret, a message not addressed to the recipient is rejected, outsiders get 404, login errors don't reveal whether a user exists, rate limits work, security headers are present, and WebSocket connects are refused without a token. The PGP test data was generated by OpenPGP.js, the same library as the browser.
 :::
 
-::: details 20. What would you add next?
-Forward secrecy, a zero-knowledge key backup, fingerprint QR codes, 2FA or passkeys, short-lived tokens with refresh, and Redis for rate limiting across instances. The full list is in `DEPLOYMENT_AND_SUGGESTIONS.md`.
+::: details 20. Why not store the private keys in HashiCorp Vault?
+Because Vault belongs to whoever runs the server. A key the server can unlock is a key the server could use, so it wouldn't be end-to-end any more. CipherChat uses Vault for the **server's** secrets (the JWT secret and database login, loaded by Spring Cloud Vault) and for a second lock (Transit) on the passphrase-locked backups. Removing that lock still leaves the passphrase lock, which only the user can open.
+:::
+
+::: details 21. What would you add next?
+Forward secrecy, Argon2 for the key backup, fingerprint QR codes, 2FA or passkeys, short-lived tokens with refresh, and Redis for rate limiting across instances. The full list is in `DEPLOYMENT_AND_SUGGESTIONS.md`.
 :::
 
 ### Glossary
@@ -402,7 +433,14 @@ Forward secrecy, a zero-knowledge key backup, fingerprint QR codes, 2FA or passk
 | **Digital signature** | A hash signed with a private key, proving who sent the data and that it's unchanged. |
 | **Fingerprint** | A hash of a public key, used to check you have the right key. |
 | **Trust on first use (TOFU)** | Remember the first key you see for someone and warn if it changes. |
-| **Passphrase** | The secret that locks your private key on your device. |
+| **Passphrase** | The secret that locks the backup of your private key; asked at sign-up and on a new device only. |
+| **Device key** | A non-extractable WebCrypto AES-GCM key in the browser that locks the private key on that device. |
+| **Non-extractable key** | A browser key that code can use but never read or export. |
+| **HashiCorp Vault** | A server for secrets; CipherChat keeps its own secrets there and uses it to wrap key backups. |
+| **KV v2** | Vault's versioned key-value store for secrets. |
+| **Transit** | Vault's "encryption as a service": it encrypts data with keys that never leave Vault. |
+| **Envelope encryption** | Locking data with one key and keeping that key somewhere else (here: in Vault). |
+| **AppRole** | A Vault login for applications: a role ID plus a secret ID. |
 | **PGP** | Pretty Good Privacy, the 1991 program for encrypting and signing. |
 | **OpenPGP** | The open standard for PGP; the current version is RFC 9580. |
 | **RFC 9580** | The 2024 OpenPGP specification. |
@@ -430,12 +468,12 @@ Forward secrecy, a zero-knowledge key backup, fingerprint QR codes, 2FA or passk
 | **WebSocket** | A connection that stays open so the server can push data. |
 | **STOMP** | A simple messaging protocol on top of WebSocket, with destinations like `/user/queue/messages`. |
 | **Rate limiting** | Limiting how many attempts are allowed per time window. |
-| **IndexedDB** | A database built into the browser, used to store the locked private key. |
+| **IndexedDB** | A database built into the browser, used to store the device key and the locked private key. |
 
 ## Summary
 
-- **CipherChat's limits:** a lost key means lost messages, there's no forward secrecy, first contact trusts the server's key, a compromised device or served code is dangerous, and metadata is visible. Each has a known fix.
+- **CipherChat's limits:** a lost passphrase means lost messages on new devices, the server holds a (locked) backup, there's no forward secrecy, first contact trusts the server's key, a compromised device or served code is dangerous, and metadata is visible. Each has a known fix.
 - **You can prove it:** the network, the database and the disk only ever contain PGP ciphertext, fingerprints match between users, and tampering is detected.
-- **You can explain it:** 30 seconds for the app, 2 minutes for PGP, and 20 answers backed by real code.
+- **You can explain it:** 30 seconds for the app, 2 minutes for PGP, and 21 answers backed by real code.
 
 That's the end of the series. Go back to [the course overview](./) any time, and good luck in your interview.

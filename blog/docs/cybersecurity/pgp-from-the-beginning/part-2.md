@@ -21,7 +21,7 @@ I assume nothing, except that you've read [Part I](./part-1). You know what a pu
 - **Hybrid encryption.** How PGP locks a message with a random key, then locks that key with the recipient's public key.
 - **Digital signatures and hashing.** How the "Verified" badge proves who sent a message, and what happens when a message is tampered with.
 - **Fingerprints.** A short code that proves a public key is the right one.
-- **Passphrases.** How your private key is protected, and why it never leaves your browser.
+- **Protecting the private key.** A passphrase you type once, a device key you never see, and why a usable private key never leaves your browser.
 - **What PGP and OpenPGP are.** A little history, the standard, armored text, and why CipherChat uses Curve25519 instead of RSA.
 
 [[toc]]
@@ -344,89 +344,142 @@ Because the server might be compromised. If it swapped bob's key, it could also 
 Don't send anything yet. Contact bob another way (in person or a call) and compare the new fingerprint. Only then click "I have verified it — use the new key".
 :::
 
-## Protecting the private key: passphrases
+## Protecting the private key: a passphrase once, then a device key
 
 ### The idea in one sentence
 
-Your private key is stored **locked** with your passphrase, is only unlocked in your browser's memory, and is never sent to the server.
+Your private key is kept on each of your devices, locked by a **device key** the browser never lets anyone read; the only copy that leaves the device is a **backup locked with your passphrase**, which the server cannot open.
 
 ### Where you see it in CipherChat
 
-**Journey step 4: logging in and unlocking the private key.** The **Sign in** screen asks for three things: **Username**, **Password** and **Key passphrase**. The hint says *"Unlocks your private key on this device only."*
+**Journey step 4: logging in.** The **Sign in** screen asks for only two things: **Username** and **Password**. There is no passphrase field.
 
-![The Sign in screen with Username, Password and Key passphrase fields](/screenshots/login.png)
+![The Sign in screen with only Username and Password fields](/screenshots/login.png)
 
 1. Username and password go to the server, which answers with a login token.
-2. The passphrase **stays in the browser**. It unlocks the locked private key stored there.
+2. On a browser you've used before, the browser unlocks your private key by itself with its **device key**. You go straight to your chats.
+3. Reloading the page doesn't ask for anything either: the device key unlocks the key again.
 
-If you reload the page, the unlocked key is gone. You'll see **Unlock your key**: *"Your private key is locked after a reload."* Enter the passphrase again, and you're back.
+**Journey step 4b: a new device or browser.** If this browser doesn't have your key yet (a new laptop, another browser, or you cleared the site data), you see **Set up this browser**: *"Enter your key passphrase once to unlock your encrypted backup here. After that, signing in on this browser needs only your password."*
 
-**Journey step 9: exporting a key backup.** On **Profile**, **Export private key backup** downloads a `.asc` file. It's the **locked** private key, *"Encrypted with your passphrase"*. You need it to sign in on another device.
+![The "Set up this browser" screen asking for the key passphrase](/screenshots/new-device.png)
+
+The app downloads your locked backup from the server, unlocks it **in the browser** with the passphrase, and locks it again with a new device key for this browser. A wrong passphrase shows *"That passphrase does not unlock your key backup..."*, and nothing is sent to the server.
+
+**Journey step 9: signing out.** **Sign out** offers two choices: **Sign out** (*"Keep my key on this browser"*) and **Sign out and forget this device**. The second one deletes the key from this browser, which is what you want on a shared computer.
+
+![The Sign out menu with "Sign out" and "Sign out and forget this device"](/screenshots/signout-menu.png)
 
 ### A simple comparison
 
-A safe in your bedroom. The safe (the locked private key) can be stored anywhere. The combination (the passphrase) is only in your head.
+Your house key, plus a spare in a bank safe-deposit box.
+
+- The key on your keyring (the **device-locked copy**) opens the door every day without fuss. The keyring is welded to your bag: you can use it, but nobody can take the key off to copy it.
+- The spare (the **passphrase-locked backup**) sits at the bank (the server). The bank holds the box, but only your code opens it. You only go there when you get a new bag.
 
 ### Proof
 
-The session keeps the unlocked key in memory only, and saves just the token and username ([`session.ts` lines 38–50](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/src/lib/session.ts#L38-L50)):
+The device key is a WebCrypto AES-GCM key created with `extractable: false` ([`device-key.ts` lines 33–51](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/frontend/src/lib/device-key.ts#L33-L51)):
 
-```ts:line-numbers=38
-function emit(next: SessionState) {
-  state = next;
+```ts:line-numbers=33
+export async function protectOnDevice(username: string, key: DeviceKey): Promise<void> {
+  const deviceKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plain = serializeUnlockedKey(key.privateKey);
   try {
-    if (next.token) {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ token: next.token, username: next.username }));
-    } else {
-      sessionStorage.removeItem(STORAGE_KEY);
-    }
-  } catch {
-    // Keep working in memory.
-  }
-  listeners.forEach((listener) => listener());
-}
+    const wrappedPrivateKey = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv, additionalData: associatedData(username, key.fingerprint) },
+      deviceKey,
+      plain as BufferSource,
+    );
+    await keystore.put({
+      username,
+      publicKey: key.publicKey,
+      fingerprint: key.fingerprint,
+      deviceKey,
+      iv,
+      wrappedPrivateKey,
 ```
 
 Let's break it down:
 
-- **`state = next`**: the full session, including `privateKey`, lives in a JavaScript variable (memory).
-- **`sessionStorage.setItem(... { token, username })`**: only the token and username are saved. The private key isn't. That's why a reload asks for your passphrase again.
+- **`crypto.subtle.generateKey(..., false, ...)`**: the browser makes a random 256-bit AES key. The `false` means **not extractable**: JavaScript can ask the browser to encrypt and decrypt with it, but can never read its bytes, not even with `exportKey`.
+- **`crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData }, ...)`**: locks the private key. GCM also detects tampering. `additionalData` ties the locked key to this username and fingerprint, so a record can't be swapped onto another account.
+- **`keystore.put({ ... deviceKey, wrappedPrivateKey ... })`**: saves both in IndexedDB. The browser stores the `CryptoKey` object itself; the raw key material stays inside the browser.
 
-At sign-in, the stored key is first compared to the key the server has for you, then unlocked ([`login/page.tsx` lines 41–51](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/src/app/%28auth%29/login/page.tsx#L41-L51)):
+At sign-in, the device unlocks the key with no passphrase ([`login/page.tsx` lines 62–73](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/frontend/src/app/%28auth%29/login/page.tsx#L62-L73)):
 
-```tsx:line-numbers=41
-  async function unlockStored(username: string, passphrase: string, serverFingerprint?: string | null) {
-    const stored = await keystore.get(username);
-    if (!stored) return null;
-    if (serverFingerprint && stored.fingerprint !== serverFingerprint) {
-      throw new Error(
-        "The key stored on this device does not match the key on your account. Import your current key backup.",
-      );
-    }
-    const key = await unlockPrivateKey(stored.encryptedPrivateKey, passphrase);
-    return { key, stored };
-  }
+```tsx:line-numbers=62
+      const auth = await api.login(username, password);
+      if (!auth.hasPublicKey) {
+        setStage({ kind: "create-key", auth });
+        return;
+      }
+      // Same device: the device key unlocks the private key. No passphrase.
+      const local = await unlockFromDevice(auth.username, auth.fingerprint);
+      if (local) {
+        done(auth, local.privateKey, local.publicKey, local.fingerprint);
+      } else {
+        setStage({ kind: "new-device", auth });
+      }
 ```
 
 Let's break it down:
 
-- **`keystore.get(username)`**: reads the locked key from IndexedDB on this device.
-- **`!stored`**: no key on this device (a new computer). The screen then asks you to import your backup file.
-- **`stored.fingerprint !== serverFingerprint`**: the key on this device isn't the one on your account, so stop.
-- **`unlockPrivateKey(..., passphrase)`**: unlocks it in memory. A wrong passphrase shows "Wrong passphrase. Your key could not be unlocked."
+- **`api.login(username, password)`**: the only thing the server checks. It answers with a token and your key's fingerprint.
+- **`unlockFromDevice(auth.username, auth.fingerprint)`**: unlocks this browser's copy, but only if it is the key your account really has (the fingerprints must match). A stale key is deleted.
+- **`setStage({ kind: "new-device", auth })`**: no usable key on this browser, so ask for the passphrase once.
+
+On a new device, the backup is downloaded, checked and unlocked in the browser ([`login/page.tsx` lines 99–115](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/frontend/src/app/%28auth%29/login/page.tsx#L99-L115)):
+
+```tsx:line-numbers=99
+      if (auth.hasKeyBackup) {
+        keyBackup = (await api.getKeyBackup()).keyBackup;
+      } else {
+        if (!(file instanceof File) || file.size === 0) throw new Error("Choose your key backup file (.asc)");
+        if (file.size > 64 * 1024) throw new Error("That file is too large to be a key backup");
+        keyBackup = await file.text();
+      }
+      const fingerprint = await readPrivateKeyFingerprint(keyBackup).catch(() => {
+        throw new Error("That is not an OpenPGP private key backup");
+      });
+      if (fingerprint !== auth.fingerprint) {
+        throw new Error("This backup belongs to a different key than the one on your account");
+      }
+      const privateKey = await unlockPrivateKey(keyBackup, passphrase);
+      const publicKey = privateKey.toPublic().armor();
+      if (!auth.hasKeyBackup) await api.uploadKeyBackup(keyBackup); // next new device needs no file
+      await protectOnDevice(auth.username, { privateKey, publicKey, fingerprint });
+```
+
+Let's break it down:
+
+- **`api.getKeyBackup()`**: `GET /api/keys/me/backup`. The server returns the backup **still locked with your passphrase**.
+- **`fingerprint !== auth.fingerprint`**: the backup must belong to the key on your account.
+- **`unlockPrivateKey(keyBackup, passphrase)`**: unlocks it here, in the browser. The passphrase never travels.
+- **`protectOnDevice(...)`**: locks it with a brand-new device key for this browser. Next time: password only.
+- The `file` branch is a fallback for accounts without a stored backup: you choose the backup file you exported from **Profile**.
+
+> **Why not keep the private key on the server, in a vault?** Because then the server could use it, and the promise is that only you can read your messages. The server keeps only the passphrase-locked backup. It does add a second lock on it with HashiCorp Vault, but removing that lock still leaves the passphrase lock. Part IV shows how.
 
 ### Check yourself
 
-1. You reload the CipherChat tab. Why are you asked for your passphrase but not your password?
+1. You reload the CipherChat tab. Why are you asked for nothing at all?
 
 ::: details Answer
-The login token is kept in `sessionStorage`, so you're still signed in to the server. But the unlocked private key only lived in memory, so it's gone after a reload and must be unlocked again with the passphrase.
+The login token is kept in `sessionStorage`, so you're still signed in to the server. The unlocked private key only lived in memory, so it's gone after the reload, but the browser unlocks the stored copy again with its device key, without asking you.
 :::
 
-2. What's inside the file from "Export private key backup"? Is it dangerous to lose?
+2. Someone copies the IndexedDB files from your laptop. Can they use your private key on their own computer?
 
 ::: details Answer
-It's your private key, still **locked** with your passphrase. Someone who finds it would also need your passphrase. But keep them separate, as the app says: the file and the passphrase together unlock everything.
+Not by copying the files: the private key is locked with the device key, and the device key can't be read or exported, so the copied bytes are useless elsewhere. (Someone who can run code inside your unlocked browser profile is a different, bigger problem; that's why "Sign out and forget this device" exists for shared computers.)
+:::
+
+3. The server stores your key backup. Why can't the server read your messages?
+
+::: details Answer
+The backup is locked with your passphrase, and the passphrase never leaves your browser. The server even refuses any backup that isn't passphrase-locked. Without the passphrase, the backup is useless.
 :::
 
 ## What PGP and OpenPGP actually are
@@ -529,7 +582,7 @@ ECC keys are much smaller and faster to generate for the same strength, which ma
 - **Hybrid encryption:** a random session key encrypts the message, and each recipient's public key locks a copy of the session key. CipherChat locks it for the recipient **and** the sender, and the server checks both.
 - **Signatures** prove who sent a message. CipherChat checks against the sender's key only, and shows Verified, Signature invalid or Unsigned. A tampered message fails to decrypt at all.
 - **Fingerprints** let two people confirm they have the right key. CipherChat calculates them in the browser and warns when a contact's key changes.
-- **Passphrases** keep the private key locked on your device. It's unlocked in memory only and never sent to the server.
+- **The private key** is locked on each device by a non-extractable device key, so signing in needs only your password. The passphrase locks the backup and is asked only on a new device. A usable private key is never sent to the server.
 - **OpenPGP** (RFC 9580) is the standard behind all of this. CipherChat uses armored text for messages and Curve25519 keys.
 
 **Next:** [Part III: PGP inside CipherChat, end to end](./part-3)

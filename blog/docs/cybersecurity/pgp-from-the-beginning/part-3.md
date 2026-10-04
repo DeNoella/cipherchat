@@ -16,15 +16,118 @@ I assume nothing, except the ideas from [Part I](./part-1) and [Part II](./part-
 - [BouncyCastle Java](https://www.bouncycastle.org/documentation/)
 - [Spring Boot reference: WebSockets](https://docs.spring.io/spring-framework/reference/web/websocket/stomp.html) (STOMP messaging)
 - [Spring Boot reference](https://docs.spring.io/spring-boot/)
+- [MDN: Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API) and [HashiCorp Vault: Transit](https://developer.hashicorp.com/vault/docs/secrets/transit)
 
 ## In this article we will cover
 
+- **The journey of your key.** Creating an account, signing in, and setting up a new device.
 - **The journey of one message.** Every step from typing to the "Verified" badge, with one diagram.
 - **The journey of one attachment.** How a file is encrypted, stored and downloaded.
 - **What the server can and cannot see.** Honestly, including the metadata it *does* see.
 - **The libraries.** Each one, what it does, and where it's used.
 
 [[toc]]
+
+## The journey of your key: create account, sign in, new device
+
+### The idea in one sentence
+
+You type your key passphrase once when you create your account, and again only on a new device; every other sign-in uses your password alone, because each device keeps its own locked copy of your private key.
+
+### Where you see it in CipherChat
+
+**Journey steps 1 to 4b.**
+
+1. **Create your account.** alice fills in **Username**, **Password**, **Key passphrase** and **Confirm passphrase**, and clicks **Create account**.
+2. **Her browser makes the key pair** and a **backup** of the private key locked with her passphrase.
+3. **It sends the public key and the locked backup** to the server, and locks the private key on this device with a device key.
+4. **Next day, same browser:** she signs in with username and password. The device key unlocks her private key. No passphrase.
+5. **New laptop (step 4b):** after the password, the app shows **Set up this browser** and asks for her key passphrase **once**. It downloads the locked backup, unlocks it in the browser, and locks it with a new device key.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as alice's browser
+    participant S as Spring Boot server
+    participant V as HashiCorp Vault
+    participant DB as PostgreSQL
+    Note over A: Create account
+    A->>A: generateKeyPair(): key pair + backup locked with passphrase
+    A->>S: POST /api/auth/register {username, password, publicKey, keyBackup}
+    S->>S: BouncyCastle: backup is passphrase-locked<br/>and matches the public key
+    S->>V: transit/encrypt (context = user id)
+    V-->>S: vault:v1:...
+    S->>DB: INSERT user, public key, vault:v1:... backup
+    A->>A: protectOnDevice(): lock key with a<br/>non-extractable device key (IndexedDB)
+    Note over A: Sign in, same browser
+    A->>S: POST /api/auth/login {username, password}
+    S-->>A: JWT + fingerprint
+    A->>A: unlockFromDevice(): no passphrase
+    Note over A: Sign in, new browser
+    A->>S: POST /api/auth/login, then GET /api/keys/me/backup
+    S->>V: transit/decrypt (context = user id)
+    S-->>A: backup, still locked with the passphrase
+    A->>A: unlockPrivateKey(backup, passphrase), then protectOnDevice()
+```
+
+### Two locks on the server copy
+
+The backup on the server is locked **twice**:
+
+| Lock | Who holds the key | What it protects against |
+|---|---|---|
+| **Inner: your passphrase** (OpenPGP, AES-256) | Only you | The server, its operators, and anyone who breaks into it |
+| **Outer: Vault Transit** (AES-256-GCM, a different key per user) | HashiCorp Vault, never the database | Someone who steals a copy of the database or a database backup |
+
+The server can remove the outer lock (it needs to, to give you your backup), but it can never remove the inner one.
+
+### Proof
+
+The outer lock ([`KeyBackupEnvelope.java` lines 42–51](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/java/com/cipherchat/service/KeyBackupEnvelope.java#L42-L51)):
+
+```java:line-numbers=42
+    public String wrap(long userId, String passphraseLockedBackup) {
+        Plaintext plaintext = Plaintext.of(passphraseLockedBackup.getBytes(StandardCharsets.US_ASCII))
+                .with(context(userId));
+        try {
+            return transit.encrypt(keyName, plaintext).getCiphertext();
+        } catch (VaultException e) {
+            log.error("Vault Transit encrypt failed for user {}", userId, e);
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, UNAVAILABLE);
+        }
+    }
+```
+
+Let's break it down:
+
+- **`passphraseLockedBackup`**: what the browser sent. It is already locked with alice's passphrase.
+- **`.with(context(userId))`**: the Vault key is "derived": each user gets their own key, made from their user ID. A backup copied onto another user's row can't be decrypted.
+- **`transit.encrypt(keyName, plaintext)`**: Vault encrypts it and returns text like `vault:v1:buiRA3i0...`. The encryption key never leaves Vault.
+- **`SERVICE_UNAVAILABLE`**: if Vault is down, the app answers `503` with a clear message instead of storing anything unprotected.
+
+What ends up in the database is only that Vault text ([`V2__key_backup.sql` lines 1–5](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/resources/db/migration/V2__key_backup.sql#L1-L5)):
+
+```sql:line-numbers=1
+-- Passphrase-protected private key backup, so a user can sign in on a new device with only their
+-- password and key passphrase. The browser locks the key with the passphrase before upload; the
+-- server then wraps it again with Vault Transit (envelope encryption) and stores that here.
+-- Neither layer gives the server a usable private key.
+ALTER TABLE users ADD COLUMN key_backup VARCHAR(40000);
+```
+
+### Check yourself
+
+1. alice signs in on her phone for the first time. What does she type?
+
+::: details Answer
+Username and password, then her key passphrase **once**, to unlock the backup on the phone. After that, the phone needs only her password.
+:::
+
+2. A thief steals a database backup. Can they get alice's private key?
+
+::: details Answer
+No. The `key_backup` column holds Vault ciphertext (`vault:v1:...`). Without access to Vault they can't remove even the outer lock. And even with Vault, they'd still face the passphrase lock.
+:::
 
 ## The journey of one message
 
@@ -264,7 +367,8 @@ The server sees **who** talks to **whom** and **when**, but never **what** they 
 | --- | --- |
 | Usernames | Message text |
 | Your password when you sign in (over HTTPS), and stores only its BCrypt hash | Your key passphrase |
-| Public keys, fingerprints and key algorithms | Private keys |
+| Public keys, fingerprints and key algorithms | A usable private key |
+| Your key backup, but only locked with your passphrase (and stored wrapped by Vault) | What's inside that backup |
 | Ciphertext of every message | Attachment contents |
 | Who is in each conversation | Attachment file names and types |
 | When each message was sent, and when conversations were last active | Whether a message was "Verified" (that's checked in the browser) |
@@ -331,7 +435,7 @@ Each card says what the library does, where you meet it in the user journey, and
 #### OpenPGP.js (`openpgp` 6.x)
 
 - **What it does:** all PGP work: generating keys, encrypting, signing, decrypting, verifying.
-- **In the journey:** steps 2 (key generation), 4 (unlock), 6 to 8 (encrypt, decrypt, files).
+- **In the journey:** steps 2 (key generation and the passphrase-locked backup), 4b (unlocking the backup on a new device), 6 to 8 (encrypt, decrypt, files).
 - **Code:** [`frontend/src/lib/crypto.ts`](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/src/lib/crypto.ts). It's the only file that imports it.
 
 </div>
@@ -340,9 +444,19 @@ Each card says what the library does, where you meet it in the user journey, and
 
 #### IndexedDB (built into the browser)
 
-- **What it does:** stores your locked private key and the fingerprints you've pinned, on your device only.
+- **What it does:** stores your device key, your private key locked by it, and the fingerprints you've pinned, on your device only.
 - **In the journey:** steps 2 (saving the key), 4 (loading it), 5 (pinning a contact's fingerprint).
-- **Code:** [`frontend/src/lib/keystore.ts`](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/src/lib/keystore.ts)
+- **Code:** [`frontend/src/lib/keystore.ts`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/frontend/src/lib/keystore.ts)
+
+</div>
+
+<div class="layer-card">
+
+#### Web Crypto API (built into the browser)
+
+- **What it does:** creates the **device key**, an AES-GCM key marked `extractable: false`, and uses it to lock and unlock your private key. The browser never lets anyone read that key, not even CipherChat's own code.
+- **In the journey:** steps 3 (locking the key on this device), 4 (unlocking it at sign-in, no passphrase), 4b (a new device key on a new browser).
+- **Code:** [`frontend/src/lib/device-key.ts`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/frontend/src/lib/device-key.ts)
 
 </div>
 
@@ -360,7 +474,7 @@ Each card says what the library does, where you meet it in the user journey, and
 
 #### Next.js and React
 
-- **What they do:** build every screen (register, sign in, chats, profile). Next.js also adds a strict Content-Security-Policy to every page, so injected scripts can't steal the unlocked key.
+- **What they do:** build every screen (register, sign in, set up this browser, chats, profile). Next.js also adds a strict Content-Security-Policy to every page, so injected scripts can't steal the unlocked key.
 - **In the journey:** every step.
 - **Code:** [`frontend/src/app`](https://github.com/angelabs-png/cipherchat/tree/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/src/app) and [`frontend/src/proxy.ts`](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/src/proxy.ts)
 
@@ -420,6 +534,16 @@ Each card says what the library does, where you meet it in the user journey, and
 
 <div class="layer-card">
 
+#### HashiCorp Vault and Spring Cloud Vault
+
+- **What it does:** Vault is the server's safe. **Spring Cloud Vault** logs the backend in to Vault at start-up (AppRole) and loads the JWT signing secret and the database password from Vault's **KV** store, so they are never in config files. Vault's **Transit** engine adds the outer lock to key backups. It holds the server's secrets only, never users' private keys.
+- **In the journey:** server start-up (secrets), step 3 (wrapping the backup), step 4b (unwrapping it for a new device).
+- **Code:** [`application.yml`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/resources/application.yml), [`KeyBackupEnvelope.java`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/backend/src/main/java/com/cipherchat/service/KeyBackupEnvelope.java), [`vault/init.sh`](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/vault/init.sh)
+
+</div>
+
+<div class="layer-card">
+
 #### Spring Data JPA (with Hibernate) and PostgreSQL
 
 - **What they do:** JPA turns Java classes like `Message` into database rows. PostgreSQL stores them.
@@ -462,7 +586,7 @@ Each card says what the library does, where you meet it in the user journey, and
 
 #### For testing: JUnit, MockMvc, H2 and Playwright
 
-- **What they do:** JUnit and MockMvc test the backend against an in-memory H2 database. Playwright drives a real Chrome through the whole flow.
+- **What they do:** JUnit and MockMvc test the backend against an in-memory H2 database, with a real Vault started in Docker by **Testcontainers**. Playwright drives a real Chrome through the whole flow, including signing in on a second browser with the passphrase.
 - **Code:** [`backend/src/test`](https://github.com/angelabs-png/cipherchat/tree/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/src/test/java/com/cipherchat) and [`frontend/e2e/full-flow.mjs`](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/e2e/full-flow.mjs)
 
 </div>
@@ -485,7 +609,8 @@ Each card says what the library does, where you meet it in the user journey, and
 
 - **A message** is encrypted and signed in alice's browser, checked (not decrypted) by the server, stored as ciphertext, pushed to bob over WebSocket after saving, then decrypted and verified in bob's browser.
 - **An attachment** is encrypted and uploaded first. Its name and type ride inside the encrypted message. Only participants can download it.
-- **The server sees metadata** (who, when, how big) but **never content** (text, files, names, private keys).
-- **OpenPGP.js** does the cryptography in the browser. **BouncyCastle** only checks on the server. **Spring Security, BCrypt and JJWT** handle logins.
+- **Your key** is made in your browser. The passphrase locks a backup (asked again only on a new device); a device key locks the copy each browser keeps, so sign-in needs only your password.
+- **The server sees metadata** (who, when, how big) but **never content** (text, files, names, a usable private key).
+- **OpenPGP.js** does the cryptography in the browser. **BouncyCastle** only checks on the server. **Spring Security, BCrypt and JJWT** handle logins. **HashiCorp Vault** keeps the server's secrets and adds a second lock to key backups.
 
 **Next:** [Part IV: Spring Boot architecture, layer by layer](./part-4)

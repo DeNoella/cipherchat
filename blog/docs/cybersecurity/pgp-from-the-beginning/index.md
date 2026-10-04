@@ -16,7 +16,7 @@ CipherChat is a chat app I built. It's **end-to-end encrypted**: your browser lo
 - **Backend:** Spring Boot (Java). It stores accounts, public keys and ciphertext, and it checks that what it receives really is encrypted.
 - **Database:** PostgreSQL.
 
-Every example in this course comes from CipherChat as it actually works. Every code snippet links to the exact lines on GitHub, pinned to one commit so the links never break.
+Every example in this course comes from CipherChat as it actually works. Every code snippet links to the exact lines on GitHub, pinned to a commit so the links never break.
 
 ![The CipherChat chat screen, showing an encrypted conversation with the Verified badge](/screenshots/chat.png)
 
@@ -27,9 +27,9 @@ Every example in this course comes from CipherChat as it actually works. Every c
 | Part | What you'll be able to explain |
 | --- | --- |
 | **I** | Why encryption exists, and the difference between one shared key and a public/private key pair. |
-| **II** | How PGP really locks a message: session keys, signatures, fingerprints and passphrases. |
-| **III** | The full journey of one message and one file through CipherChat, and what the server can and can't see. |
-| **IV** | The Spring Boot backend, layer by layer, using a restaurant as the running comparison. |
+| **II** | How PGP really locks a message: session keys, signatures, fingerprints, and how your private key is protected (a passphrase once, then a device key). |
+| **III** | The journey of your key (sign-up, sign-in, new device), of one message and one file, and what the server can and can't see. |
+| **IV** | The Spring Boot backend, layer by layer (including HashiCorp Vault), using a restaurant as the running comparison. |
 | **V** | The honest limits, hands-on proof with the running app, and interview answers. |
 
 ## How to use this course in one day
@@ -46,7 +46,7 @@ Every example in this course comes from CipherChat as it actually works. Every c
 You need Docker. From the `cipherchat` folder:
 
 ```bash
-cp .env.example .env
+cp .env.example .env    # then replace each "replace-with-..." value with a random one
 docker compose up --build
 ```
 

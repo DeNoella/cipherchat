@@ -17,7 +17,7 @@ Throughout this series, I'll use **CipherChat**, an end-to-end encrypted chat ap
 - [RFC 9580, the OpenPGP standard](https://www.rfc-editor.org/rfc/rfc9580): the official rules of PGP.
 - [BouncyCastle Java](https://www.bouncycastle.org/documentation/): the library the CipherChat server uses to check PGP data.
 - [Spring Boot reference](https://docs.spring.io/spring-boot/): the framework behind the CipherChat server.
-- [CipherChat source code](https://github.com/angelabs-png/cipherchat/tree/0033149090aa01b53d9ccd7ccadaf8929bfe4974): pinned to the exact commit this course describes.
+- [CipherChat source code](https://github.com/angelabs-png/cipherchat/tree/4dfcc8035cb33637ab6c712c660f036e26f21db9): pinned to the commit this course describes. (Some older snippets link to an earlier commit where that code was unchanged.)
 
 ## In this article we will cover
 
@@ -99,11 +99,20 @@ Symmetric encryption uses **one secret key** to both lock (encrypt) and unlock (
 
 **Journey step 2: choosing a passphrase.** When you create an account, you choose a **Key passphrase**. The hint under it says:
 
-> *"Locks your private key on this device. The server never sees it and cannot reset it."*
+> *"Asked only once here, then again only on a new device or browser. The server never sees it and cannot reset it."*
 
-That's symmetric encryption. The same passphrase locks your private key when it's created (step 2), and unlocks it every time you sign in (step 4). One secret, both directions.
+That's symmetric encryption. The passphrase locks a **backup** of your private key when you sign up, and the very same passphrase unlocks that backup later, when you sign in on a new device or browser. One secret, both directions.
 
 ![The CipherChat "Create your account" screen with Username, Password, Key passphrase and Confirm passphrase fields](/screenshots/register.png)
+
+CipherChat actually uses symmetric encryption **twice** to protect your private key:
+
+| Lock | Key | When it is used |
+|---|---|---|
+| The **backup** of your private key, kept on the server | Made from your **passphrase** | Once, when you set up a new device or browser |
+| The copy **on this device** (in the browser's storage) | A random **device key** the browser creates and never lets anyone read | Every time you sign in or reload, automatically, so you don't type the passphrase |
+
+Part II looks at both locks in detail.
 
 ### A simple comparison
 
@@ -117,11 +126,15 @@ This is called the **key distribution problem**. Asymmetric encryption solves it
 
 ### Proof
 
-The passphrase is passed in when the key pair is generated, and needed again to unlock it ([`crypto.ts` lines 24–43](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/src/lib/crypto.ts#L24-L43)). Here are the key parts:
+The passphrase locks the backup right after the key pair is created ([`crypto.ts` line 40](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/frontend/src/lib/crypto.ts#L40)), and unlocks it again on a new device ([`crypto.ts` lines 50–57](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/frontend/src/lib/crypto.ts#L50-L57)):
 
-```ts:line-numbers=36
-export async function unlockPrivateKey(encryptedPrivateKey: string, passphrase: string) {
-  const privateKey = await openpgp.readPrivateKey({ armoredKey: encryptedPrivateKey });
+```ts:line-numbers=40
+  const keyBackup = (await openpgp.encryptKey({ privateKey, passphrase, config: BACKUP_CONFIG })).armor();
+```
+
+```ts:line-numbers=50
+export async function unlockPrivateKey(keyBackup: string, passphrase: string): Promise<UnlockedKey> {
+  const privateKey = await openpgp.readPrivateKey({ armoredKey: keyBackup });
   try {
     return await openpgp.decryptKey({ privateKey, passphrase });
   } catch {
@@ -132,20 +145,21 @@ export async function unlockPrivateKey(encryptedPrivateKey: string, passphrase: 
 
 Let's break it down:
 
-- **`encryptedPrivateKey`**: your private key, stored *locked* in the browser.
-- **`openpgp.decryptKey({ privateKey, passphrase })`**: uses the passphrase to unlock the private key. The same passphrase locked it during registration.
-- **`throw new WrongPassphraseError()`**: a wrong passphrase can't unlock it. The screen then shows *"Wrong passphrase. Your key could not be unlocked."*
+- **`openpgp.encryptKey({ privateKey, passphrase })`**: locks a copy of the private key with the passphrase. That locked copy is the `keyBackup`.
+- **`keyBackup`**: your private key, *locked*. This is what the server stores. It cannot open it.
+- **`openpgp.decryptKey({ privateKey, passphrase })`**: on a new device, uses the passphrase to unlock the backup. The same passphrase locked it during registration.
+- **`throw new WrongPassphraseError()`**: a wrong passphrase can't unlock it. The screen then shows *"That passphrase does not unlock your key backup. Use the key passphrase you chose when you created your account (not your password)."*
 
-![The "Unlock your key" screen showing the error "Wrong passphrase. Your key could not be unlocked."](/screenshots/unlock-error.png)
+![The "Set up this browser" screen showing the error "That passphrase does not unlock your key backup."](/screenshots/unlock-error.png)
 
-> **Note:** Under the hood, OpenPGP turns your passphrase into a symmetric key and uses it to encrypt the private key. That's why the server can't reset it: the server never had it.
+> **Note:** Under the hood, OpenPGP turns your passphrase into a symmetric key (salted and hashed many times, so guessing is slow) and uses it to encrypt the private key with AES-256. That's why the server can't reset it: the server never had it.
 
 ### Check yourself
 
 1. In CipherChat, what does the key passphrase lock?
 
 ::: details Answer
-Your private key, stored in your browser. The same passphrase unlocks it when you sign in.
+The **backup** of your private key. The same passphrase unlocks that backup when you sign in on a new device or browser. On a device you already use, a device key unlocks the key instead, so you aren't asked.
 :::
 
 2. Why not just give every pair of users one shared secret key to chat with?
@@ -166,9 +180,9 @@ Asymmetric encryption uses a **pair** of keys: a **public key** that anyone can 
 
 In that moment, your browser creates your key pair. The screen tells you exactly what happens next:
 
-> *"Your encryption key is created on this device. Only its public half is sent to the server."*
+> *"Your encryption key is created on this device. The server gets its public half and a backup locked with your key passphrase, which it can never open."*
 
-**Journey step 3: uploading the public key.** The public key is sent along with your registration. The private key stays in your browser, locked with your passphrase.
+**Journey step 3: uploading the public key.** The public key is sent along with your registration, together with the locked backup. The usable private key stays in your browser, locked by the device key.
 
 Notice you also chose a **Password**. It's a different secret, with a different job: the password signs you in to the server, while the passphrase locks your key. The form even refuses a passphrase that's the same as your password.
 
@@ -178,46 +192,48 @@ Think of an open padlock. You can hand out copies of your open padlock to anyone
 
 ### Proof
 
-On the register screen, the key pair is generated first, then only the public key is sent ([`register/page.tsx` lines 44–58](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/src/app/%28auth%29/register/page.tsx#L44-L58)):
+On the register screen, the key pair is generated first, then only the public key and the locked backup are sent ([`register/page.tsx` lines 44–55](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/frontend/src/app/%28auth%29/register/page.tsx#L44-L55)):
 
 ```tsx:line-numbers=44
       setStep("generating");
       const keys = await generateKeyPair(username.toLowerCase(), passphrase);
 
       setStep("registering");
-      const auth = await api.register(username, password, keys.publicKey);
+      // Only the public key and the passphrase-locked backup leave this browser.
+      const auth = await api.register(username, password, keys.publicKey, keys.keyBackup);
       if (auth.fingerprint !== keys.fingerprint) {
         throw new Error("The server reported a different fingerprint for your key. Aborting.");
       }
-      await keystore.put({
-        username: auth.username,
-        publicKey: keys.publicKey,
-        encryptedPrivateKey: keys.encryptedPrivateKey,
-        fingerprint: keys.fingerprint,
-        createdAt: new Date().toISOString(),
-      });
+      // From now on this browser unlocks the key by itself: no passphrase at login.
+      await protectOnDevice(auth.username, keys);
+      session.signIn(auth.token, auth.username, keys.privateKey, keys.publicKey, keys.fingerprint);
 ```
 
 Let's break it down:
 
 - **`setStep("generating")`**: switches the button text to "Generating key…".
-- **`generateKeyPair(username, passphrase)`**: creates the key pair in the browser. The private half comes back already locked with the passphrase.
-- **`api.register(username, password, keys.publicKey)`**: sends the username, password and **only the public key**. The private key isn't in this call.
+- **`generateKeyPair(username, passphrase)`**: creates the key pair in the browser, plus the passphrase-locked backup.
+- **`api.register(username, password, keys.publicKey, keys.keyBackup)`**: sends the username, password, the **public key** and the **locked backup**. The usable private key isn't in this call.
 - **`auth.fingerprint !== keys.fingerprint`**: a safety check. The server calculates the key's fingerprint too. If it doesn't match, something is wrong and registration stops. (More on fingerprints in Part II.)
-- **`keystore.put({... encryptedPrivateKey ...})`**: saves the locked private key in the browser's own storage (IndexedDB). It never goes to the server.
+- **`protectOnDevice(...)`**: locks the private key with a device key and saves it in the browser's own storage (IndexedDB). That's why your next sign-in on this browser needs no passphrase.
 
-Here is the key pair being created ([`crypto.ts` lines 24–33](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/frontend/src/lib/crypto.ts#L24-L33)):
+Here is the key pair being created ([`crypto.ts` lines 33–47](https://github.com/angelabs-png/cipherchat/blob/4dfcc8035cb33637ab6c712c660f036e26f21db9/frontend/src/lib/crypto.ts#L33-L47)):
 
-```ts:line-numbers=24
+```ts:line-numbers=33
 export async function generateKeyPair(username: string, passphrase: string): Promise<GeneratedKeys> {
   const { publicKey, privateKey } = await openpgp.generateKey({
     type: "ecc",
     curve: "curve25519Legacy", // Ed25519 signing + X25519 (ECDH) encryption subkey
     userIDs: [{ name: username }],
-    passphrase,
-    format: "armored",
+    format: "object",
   });
-  return { publicKey, encryptedPrivateKey: privateKey, fingerprint: await fingerprintOf(publicKey) };
+  const keyBackup = (await openpgp.encryptKey({ privateKey, passphrase, config: BACKUP_CONFIG })).armor();
+  return {
+    publicKey: publicKey.armor(),
+    keyBackup,
+    privateKey,
+    fingerprint: privateKey.getFingerprint().toUpperCase(),
+  };
 }
 ```
 
@@ -226,8 +242,8 @@ Let's break it down:
 - **`openpgp.generateKey`**: OpenPGP.js creates a new key pair, right here in the browser.
 - **`type: "ecc"`, `curve: "curve25519Legacy"`**: the kind of maths used. It's modern elliptic-curve cryptography (Part II explains why it's used instead of RSA).
 - **`userIDs: [{ name: username }]`**: labels the key with your username.
-- **`passphrase`**: locks the private key immediately. It's never stored unlocked.
-- **`format: "armored"`**: produces text starting with `-----BEGIN PGP ...-----`, easy to send as JSON.
+- **`encryptKey(... passphrase ...)`**: makes the locked backup. The unlocked `privateKey` is only kept in memory and in the device-locked copy.
+- **`publicKey.armor()`**: produces text starting with `-----BEGIN PGP PUBLIC KEY BLOCK-----`, easy to send as JSON.
 
 And the server refuses a private key, just in case someone tries ([`OpenPgpInspector.java` lines 65–68](https://github.com/angelabs-png/cipherchat/blob/0033149090aa01b53d9ccd7ccadaf8929bfe4974/backend/src/main/java/com/cipherchat/service/OpenPgpInspector.java#L65-L68)):
 
@@ -248,20 +264,20 @@ Let's break it down:
 1. During registration, which key goes to the server, and which stays in the browser?
 
 ::: details Answer
-The **public key** goes to the server, inside the `api.register(...)` call. The **private key** stays in the browser's IndexedDB, locked with your passphrase.
+The **public key** goes to the server, inside the `api.register(...)` call, together with a **backup of the private key locked with your passphrase**, which the server can't open. The usable **private key** stays in the browser's IndexedDB, locked by a device key.
 :::
 
 2. What's the difference between your password and your key passphrase in CipherChat?
 
 ::: details Answer
-The **password** signs you in to the server (the server stores a BCrypt hash of it). The **passphrase** locks your private key in the browser, and the server never sees it. The register form rejects a passphrase that equals the password.
+The **password** signs you in to the server (the server stores a BCrypt hash of it), every time. The **passphrase** locks the backup of your private key; it's only asked at sign-up and on a new device, and the server never sees it. The register form rejects a passphrase that equals the password.
 :::
 
 ## Summary
 
 - **Encryption** turns a message into ciphertext, so the machines it passes through can't read it. CipherChat encrypts in the browser, and the server rejects anything that isn't PGP ciphertext.
-- **Symmetric encryption** uses one key to lock and unlock. CipherChat uses it for your passphrase, which locks your private key. Sharing one key between people is the hard part.
-- **Asymmetric encryption** uses a key pair. Your browser creates it when you register, sends only the public key, and keeps the private key locked on your device.
+- **Symmetric encryption** uses one key to lock and unlock. CipherChat uses it twice for your private key: your passphrase locks the backup, and a device key locks the copy on your device. Sharing one key between people is the hard part.
+- **Asymmetric encryption** uses a key pair. Your browser creates it when you register, sends the public key (and a backup it can't open), and keeps the usable private key on your device.
 
 In Part II, we'll see how PGP combines both kinds of keys to lock a real message, and how the "Verified" badge proves who sent it.
 
