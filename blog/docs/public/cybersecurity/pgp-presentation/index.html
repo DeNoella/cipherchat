@@ -137,11 +137,11 @@
       <h2>How CipherChat uses PGP</h2>
       <div class="steps">
         <div class="box">1. Create an account</div>
-        <div class="box">2. The browser creates your keys</div>
+        <div class="box">2. The browser creates your keys (passphrase asked once)</div>
         <div class="box">3. Send a message or file, encrypted and signed</div>
         <div class="box">4. The receiver decrypts it and sees "Verified"</div>
       </div>
-      <p class="sub">Only the public key is sent to the server. The private key never leaves the browser.</p>
+      <p class="sub">The server gets the public key and a backup locked with your passphrase. The usable private key stays in the browser, so signing in needs only your password.</p>
       <p class="key"><strong>The server only ever sees scrambled text.</strong>It stores and delivers messages, but it cannot read them.</p>
       <div class="footer"><span>CipherChat</span><span>3</span></div>
     </div>
@@ -159,6 +159,7 @@
           <tr><td>Spring Security, JWT, BCrypt</td><td>Login, access control and safe password storage</td></tr>
           <tr><td>BouncyCastle</td><td>Checks on the server that keys and messages are valid PGP</td></tr>
           <tr><td>WebSocket (STOMP)</td><td>Delivers new messages instantly</td></tr>
+          <tr><td>HashiCorp Vault</td><td>Keeps the server's secrets and adds a second lock to key backups</td></tr>
           <tr><td>PostgreSQL</td><td>Stores accounts, public keys and encrypted messages</td></tr>
           <tr><td>Docker</td><td>Runs the whole app with one command</td></tr>
         </tbody>
@@ -172,7 +173,8 @@
       <h2>Security highlights</h2>
       <div class="points">
         <p><strong>End-to-end encryption:</strong> messages and files are encrypted in the sender's browser.</p>
-        <p><strong>Zero-knowledge server:</strong> it never sees plaintext, private keys or passphrases.</p>
+        <p><strong>Zero-knowledge server:</strong> it never sees plaintext, a usable private key or your passphrase.</p>
+        <p><strong>Secrets in Vault:</strong> no passwords in config files; key backups are locked twice.</p>
         <p><strong>Signatures:</strong> the receiver sees "Verified" when a message really came from the sender.</p>
         <p><strong>Fingerprints:</strong> users can compare them to check that no key was swapped.</p>
       </div>
