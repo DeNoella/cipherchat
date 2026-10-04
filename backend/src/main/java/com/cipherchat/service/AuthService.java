@@ -61,14 +61,19 @@ public class AuthService {
         if (request.publicKey() != null && !request.publicKey().isBlank()) {
             publicKeyService.applyTo(user, request.publicKey());
         }
-        if (request.keyBackup() != null && !request.keyBackup().isBlank()) {
-            keyBackupService.applyTo(user, request.keyBackup());
+        boolean withBackup = request.keyBackup() != null && !request.keyBackup().isBlank();
+        if (withBackup) {
+            keyBackupService.validate(user, request.keyBackup());
         }
         try {
             users.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
             // Lost a race with a concurrent registration of the same name.
             throw ApiException.conflict("Username is already taken");
+        }
+        if (withBackup) {
+            // Wrapped after the insert: the Vault Transit context is the new user's ID.
+            keyBackupService.store(user, request.keyBackup());
         }
         return tokenFor(user);
     }

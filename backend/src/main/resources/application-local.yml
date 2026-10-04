@@ -1,13 +1,8 @@
 # Development settings, activated automatically by `./mvnw spring-boot:run` (see pom.xml).
-# Matches the `cipherchat-db` container from the README. Values are fixed on purpose so that
-# stale DB_* / JWT_SECRET exports in your shell cannot break local startup.
-# Never used by the packaged jar / Docker image, which must be given real secrets.
+# Start the database and Vault first:   docker compose up -d db vault vault-init
+# The database credentials and JWT secret then come from that dev Vault, like in Docker; the
+# AppRole login (VAULT_ROLE_ID / VAULT_SECRET_ID) is read from the repository's .env file
+# (see application.yml). Never used by the packaged jar / Docker image.
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5433/cipherchat
-    username: cipherchat
-    password: change-me
-
-app:
-  jwt:
-    secret: local-dev-only-jwt-secret-do-not-use-in-production

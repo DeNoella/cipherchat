@@ -21,7 +21,20 @@
         <bouncycastle.version>1.86</bouncycastle.version>
         <jjwt.version>0.12.7</jjwt.version>
         <springdoc.version>2.8.17</springdoc.version>
+        <spring-cloud.version>2025.0.1</spring-cloud.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Web, security, persistence, messaging -->
@@ -96,6 +109,12 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Secrets (KV v2) and envelope encryption of key backups (Transit) from HashiCorp Vault -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-vault-config</artifactId>
+        </dependency>
+
         <!-- API docs -->
         <dependency>
             <groupId>org.springdoc</groupId>
@@ -112,6 +131,16 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>vault</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

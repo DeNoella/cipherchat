@@ -1,10 +1,27 @@
 spring:
   application:
     name: cipherchat
+  config:
+    # Local development only: `./mvnw spring-boot:run` (working directory backend/) reads the AppRole
+    # IDs from the repository's .env. In Docker and for a packaged jar the file does not exist there.
+    import: optional:file:../.env[.properties]
+  cloud:
+    vault:
+      uri: ${VAULT_URI:http://localhost:8200}
+      fail-fast: true
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID:}
+        secret-id: ${VAULT_SECRET_ID:}
+      kv:
+        enabled: true
+        backend: secret
+        application-name: cipherchat
+        # Read only secret/cipherchat (the policy allows nothing else).
+        default-context: ""
+        profiles: ""
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/cipherchat}
-    username: ${DB_USERNAME:cipherchat}
-    password: ${DB_PASSWORD:}
   jpa:
     open-in-view: false
     hibernate:
@@ -35,12 +52,15 @@ server:
 
 app:
   jwt:
-    # Required. At least 32 bytes. Never commit a real value.
-    secret: ${JWT_SECRET:}
+    # The signing secret (app.jwt.secret, at least 32 bytes) comes from Vault.
     ttl: ${JWT_TTL:PT12H}
     issuer: cipherchat
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGIN:http://localhost:3000}
+  key-backup:
+    # Vault Transit key that adds a second lock to the users' passphrase-locked key backups.
+    transit-path: transit
+    transit-key: cipherchat-key-backup
   attachments:
     dir: ${ATTACHMENTS_DIR:./data/attachments}
     # Plaintext limit is 10 MB (enforced in the browser); allow headroom for OpenPGP framing.
@@ -66,3 +86,12 @@ management:
   endpoint:
     health:
       show-details: never
+
+---
+# A separate document so the import above is loaded before Vault is contacted.
+# Secrets are never in this file or in env files: the JWT signing secret and the database
+# credentials (app.jwt.secret, spring.datasource.username/password) are read from Vault KV v2 at
+# secret/cipherchat when the app starts. See vault/init.sh and docs/KEY_MANAGEMENT.md.
+spring:
+  config:
+    import: vault://

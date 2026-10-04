@@ -1,5 +1,6 @@
 # One-command local stack:  cp .env.example .env && docker compose up --build
 # Frontend http://localhost:3000 · API http://localhost:8080 · Swagger http://localhost:8080/swagger-ui.html
+# Vault UI http://localhost:8200 (dev mode, sign in with VAULT_DEV_ROOT_TOKEN from .env)
 
 services:
   db:
@@ -16,7 +17,53 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    # Not published to the host: only the backend talks to the database.
+    # Published on the loopback interface only, for `./mvnw spring-boot:run` and scripts/reset-dev-data.sh.
+    ports:
+      - "127.0.0.1:5433:5432"
+
+  # ---------------------------------------------------------------------------------------------
+  # HashiCorp Vault in DEV MODE. FOR LOCAL DEVELOPMENT ONLY, NEVER FOR PRODUCTION:
+  # in-memory storage, already unsealed, a root token from .env, plain HTTP.
+  # Production setup: DEPLOYMENT_AND_SUGGESTIONS.md ("Running Vault in production").
+  # ---------------------------------------------------------------------------------------------
+  vault:
+    image: hashicorp/vault:2.1
+    restart: unless-stopped
+    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN:?Set VAULT_DEV_ROOT_TOKEN in .env}
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "127.0.0.1:8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # One-shot job: KV secrets, Transit key, least-privilege policy and AppRole login for the backend.
+  # Runs again on every `docker compose up` (dev Vault forgets everything when it restarts).
+  vault-init:
+    image: hashicorp/vault:2.1
+    depends_on:
+      vault:
+        condition: service_healthy
+    user: "0" # to write the dev persist volume
+    entrypoint: ["/bin/sh", "/vault-init/init.sh"]
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN}
+      DB_USERNAME: ${POSTGRES_USER:-cipherchat}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      VAULT_ROLE_ID: ${VAULT_ROLE_ID:?Set VAULT_ROLE_ID in .env}
+      VAULT_SECRET_ID: ${VAULT_SECRET_ID:?Set VAULT_SECRET_ID in .env}
+      # Dev only: keeps the JWT secret and a Transit key backup across dev Vault restarts.
+      DEV_PERSIST_DIR: /vault-dev-state
+    volumes:
+      - ./vault/init.sh:/vault-init/init.sh:ro
+      - vault-dev-state:/vault-dev-state
+    restart: "no"
 
   backend:
     build: ./backend
@@ -24,11 +71,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
     environment:
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-cipherchat}
-      DB_USERNAME: ${POSTGRES_USER:-cipherchat}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (at least 32 bytes)}
+      # No database password or JWT secret here: the backend reads both from Vault after an AppRole login.
+      VAULT_URI: http://vault:8200
+      VAULT_ROLE_ID: ${VAULT_ROLE_ID}
+      VAULT_SECRET_ID: ${VAULT_SECRET_ID}
       CORS_ALLOWED_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
     volumes:
       - attachments:/data/attachments
@@ -49,3 +99,4 @@ services:
 volumes:
   db-data:
   attachments:
+  vault-dev-state:

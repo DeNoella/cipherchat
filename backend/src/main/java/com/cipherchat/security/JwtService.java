@@ -26,7 +26,7 @@ public class JwtService {
         this.config = properties.jwt();
         byte[] secret = config.secret().getBytes(StandardCharsets.UTF_8);
         if (secret.length < MIN_SECRET_BYTES) {
-            throw new IllegalStateException("JWT_SECRET must be at least " + MIN_SECRET_BYTES + " bytes");
+            throw new IllegalStateException("app.jwt.secret must be at least " + MIN_SECRET_BYTES + " bytes");
         }
         this.key = Keys.hmacShaKeyFor(secret);
     }

@@ -16,17 +16,22 @@ import java.util.List;
 public record AppProperties(
         @Valid @NotNull Jwt jwt,
         @Valid @NotNull Cors cors,
+        @Valid @NotNull KeyBackup keyBackup,
         @Valid @NotNull Attachments attachments,
         @Valid @NotNull Messages messages,
         @Valid @NotNull LoginRateLimit loginRateLimit) {
 
     public record Jwt(
-            @NotBlank(message = "JWT_SECRET must be set") String secret,
+            @NotBlank(message = "app.jwt.secret must be set (it is read from Vault: secret/cipherchat)") String secret,
             @NotNull Duration ttl,
             @NotBlank String issuer) {
     }
 
     public record Cors(@NotEmpty List<String> allowedOrigins) {
+    }
+
+    /** Vault Transit key used to wrap key backups before they are stored. */
+    public record KeyBackup(@NotBlank String transitPath, @NotBlank String transitKey) {
     }
 
     public record Attachments(@NotBlank String dir, @Min(1) long maxEncryptedBytes) {

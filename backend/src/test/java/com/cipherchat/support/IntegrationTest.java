@@ -1,5 +1,6 @@
 package com.cipherchat.support;
 
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -9,9 +10,13 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Full application context on H2 (PostgreSQL mode) with Flyway migrations applied. */
+/**
+ * Full application context on H2 (PostgreSQL mode) with Flyway migrations applied, and a real
+ * Vault in Docker for secrets and Transit (see {@link VaultTestExtension}).
+ */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
+@ExtendWith(VaultTestExtension.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
