@@ -1,6 +1,6 @@
 // End-to-end check of the whole encrypted flow in a real browser (Chrome via playwright-core).
-// Requires the stack running on a FRESH database (usernames alice/bob/carol are created):
-//   docker compose up -d   then   npm run test:e2e
+// Requires the stack running:   docker compose up -d   then   npm run test:e2e
+// Usernames get a random suffix, so it can run again on the same database.
 // Env: BASE_URL (default http://localhost:3000), CHROME_PATH (default /usr/bin/google-chrome).
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
@@ -17,27 +17,38 @@ async function newUser() {
   return page;
 }
 const step = (s) => console.log('✓', s);
+const run = Math.random().toString(36).slice(2, 7);
+const ALICE = `alice_${run}`, BOB = `bob_${run}`, CAROL = `carol_${run}`;
+const password = (name) => `${name} password 123`;
+const passphrase = (name) => `${name} long passphrase`;
 async function register(page, name, shot) {
   await page.goto(BASE + '/register');
   await page.fill('input[name=username]', name);
-  await page.fill('input[name=password]', `${name} password 123`);
-  await page.fill('input[name=passphrase]', `${name} long passphrase`);
-  await page.fill('input[name=confirm]', `${name} long passphrase`);
+  await page.fill('input[name=password]', password(name));
+  await page.fill('input[name=passphrase]', passphrase(name));
+  await page.fill('input[name=confirm]', passphrase(name));
   if (shot) await page.screenshot({ path: `${shots}/register.png` });
   await page.click('button[type=submit]');
   await page.waitForURL('**/profile?welcome=1', { timeout: 20000 });
-  await page.getByText('Back up your key now').waitFor();
+  await page.getByText('Remember your key passphrase').waitFor();
+}
+async function login(page, name) {
+  await page.goto(BASE + '/login');
+  await page.fill('input[name=username]', name);
+  await page.fill('input[name=password]', password(name));
+  if (await page.locator('input[name=passphrase]').count()) throw new Error('login form must not ask for the passphrase');
+  await page.click('button[type=submit]');
 }
 const alice = await newUser();
 const bob = await newUser();
-await register(alice, 'alice', true); step('alice registered (key generated in browser)');
-await register(bob, 'bob'); step('bob registered');
+await register(alice, ALICE, true); step('alice registered (key generated in browser, backup uploaded)');
+await register(bob, BOB); step('bob registered');
 await alice.screenshot({ path: `${shots}/profile.png` });
 
 // Validation + wrong-passphrase paths
 const v = await newUser();
 await v.goto(BASE + '/register');
-await v.fill('input[name=username]', 'carol');
+await v.fill('input[name=username]', CAROL);
 await v.fill('input[name=password]', 'same password 1');
 await v.fill('input[name=passphrase]', 'same password 1');
 await v.fill('input[name=confirm]', 'same password 1');
@@ -47,14 +58,14 @@ await v.getByText('Must be different from your password').waitFor(); step('passp
 // bob opens the chat first to test real-time delivery
 async function openChat(page, peer) {
   await page.getByRole('link', { name: 'Chats' }).click();
-  await page.fill('input[name=search]', peer.slice(0, 2));
+  await page.fill('input[name=search]', peer);
   await page.getByRole('link', { name: peer, exact: true }).click();
   await page.waitForURL(`**/chats/${peer}`);
 }
-await openChat(bob, 'alice');
+await openChat(bob, ALICE);
 await bob.getByText('Say hello').waitFor(); step('bob opened empty chat');
 
-await openChat(alice, 'bob');
+await openChat(alice, BOB);
 await alice.getByText('Say hello').waitFor();
 await alice.fill('textarea', 'hello bob, this is secret');
 await alice.click('button[type=submit]');
@@ -78,43 +89,60 @@ await alice.getByText('got it, thanks!').waitFor({ timeout: 10000 }); step('repl
 await alice.getByText('Key fingerprint').click();
 await alice.screenshot({ path: `${shots}/chat.png` });
 
-// Reload -> key locked -> wrong passphrase -> correct
+// Reload -> the device key unlocks the private key again, no prompt
 await bob.reload();
-await bob.waitForURL('**/login?next=**');
-await bob.getByText('Unlock your key').waitFor();
-await bob.fill('input[name=passphrase]', 'wrong wrong wrong');
-await bob.click('button[type=submit]');
-await bob.getByText('Wrong passphrase').waitFor(); step('wrong passphrase rejected');
-await bob.screenshot({ path: `${shots}/unlock-error.png` });
-await bob.fill('input[name=passphrase]', 'bob long passphrase');
-await bob.click('button[type=submit]');
-await bob.waitForURL('**/chats/alice');
-await bob.getByText('hello bob, this is secret').waitFor(); step('history decrypts after unlock');
+await bob.waitForURL(`**/chats/${ALICE}`);
+await bob.getByText('hello bob, this is secret').waitFor(); step('reload: history decrypts with no passphrase prompt');
 
-// Fresh device login for alice -> must import backup
-const aliceBackup = await (async () => {
-  await alice.getByRole('link', { name: 'Profile' }).click();
-  const [d] = await Promise.all([alice.waitForEvent('download'), alice.getByText('Export private key backup').click()]);
-  return fs.readFileSync(await d.path(), 'utf8');
-})();
-if (!aliceBackup.includes('BEGIN PGP PRIVATE KEY BLOCK')) throw new Error('bad backup');
+// Sign out (keep device) and sign in again on the same browser: password only
+await bob.getByText('Sign out', { exact: true }).first().click();
+await bob.getByRole('button', { name: /Keep my key/ }).click();
+await bob.waitForURL('**/login');
+await login(bob, BOB);
+await bob.waitForURL('**/chats');
+step('same browser: signed in with password only');
+
+// New browser for alice: passphrase asked once, wrong one rejected with a clear message
 const fresh = await newUser();
-await fresh.goto(BASE + '/login');
-await fresh.fill('input[name=username]', 'alice');
-await fresh.fill('input[name=password]', 'alice password 123');
-await fresh.fill('input[name=passphrase]', 'alice long passphrase');
+await login(fresh, ALICE);
+await fresh.getByText('Set up this browser').waitFor(); step('new browser asks for the key passphrase');
+await fresh.fill('input[name=passphrase]', 'wrong wrong wrong');
 await fresh.click('button[type=submit]');
-await fresh.getByText('Import your key').waitFor(); step('new device asks for key backup');
-await fresh.setInputFiles('input[name=backup]', { name: 'backup.asc', mimeType: 'text/plain', buffer: Buffer.from(aliceBackup) });
+await fresh.getByText('That passphrase does not unlock your key backup').waitFor(); step('wrong passphrase rejected');
+await fresh.screenshot({ path: `${shots}/unlock-error.png` });
+await fresh.fill('input[name=passphrase]', passphrase(ALICE));
 await fresh.click('button[type=submit]');
 await fresh.waitForURL('**/chats');
-await fresh.getByRole('link', { name: 'bob' }).click();
-await fresh.getByText('got it, thanks!').waitFor(); step('imported backup decrypts history on new device');
+await fresh.getByRole('link', { name: BOB }).click();
+await fresh.getByText('got it, thanks!').waitFor(); step('backup from server decrypts history on new browser');
+
+// That browser is now set up: next sign-in needs no passphrase
+await fresh.getByText('Sign out', { exact: true }).first().click();
+await fresh.getByRole('button', { name: /Keep my key/ }).click();
+await login(fresh, ALICE);
+await fresh.waitForURL('**/chats'); step('new browser remembered: password only');
+
+// Forget this device -> passphrase asked again
+await fresh.getByText('Sign out', { exact: true }).first().click();
+await fresh.getByRole('button', { name: /forget this device/ }).click();
+await login(fresh, ALICE);
+await fresh.getByText('Set up this browser').waitFor(); step('forgotten device asks for the passphrase again');
+await fresh.fill('input[name=passphrase]', passphrase(ALICE));
+await fresh.click('button[type=submit]');
+await fresh.waitForURL('**/chats');
+await fresh.getByRole('link', { name: BOB }).click();
+await fresh.getByText('got it, thanks!').waitFor();
+
+// Site data cleared while signed in -> clear "missing key" message
+await bob.evaluate(() => new Promise((resolve) => { const r = indexedDB.deleteDatabase('cipherchat'); r.onsuccess = r.onerror = r.onblocked = resolve; }));
+await bob.goto(BASE + `/chats/${ALICE}`);
+await bob.waitForURL('**/login?device=missing**');
+await bob.getByText('Your private key is not on this browser any more').waitFor(); step('missing local key explained');
 
 // Mobile screenshots (signed-out redirect + chat)
 const m = await newUser();
 await m.setViewportSize({ width: 390, height: 844 });
-await m.goto(BASE + '/chats/alice');
+await m.goto(BASE + `/chats/${ALICE}`);
 await m.waitForURL('**/login');
 await m.screenshot({ path: `${shots}/mobile-login.png` });
 await fresh.setViewportSize({ width: 390, height: 844 });

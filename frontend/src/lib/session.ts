@@ -1,7 +1,8 @@
 /**
  * Client session state as an external store (works with useSyncExternalStore, so it is
  * hydration-safe). The JWT lives in sessionStorage (tab-scoped, cleared on close); the
- * unlocked private key lives in memory only and is lost on reload, which re-prompts for the passphrase.
+ * unlocked private key lives in memory only. After a reload it is unwrapped again from this
+ * device's IndexedDB with the non-extractable device key (see device-key.ts), with no prompt.
  */
 import { useSyncExternalStore } from "react";
 import type { UnlockedKey } from "./crypto";
@@ -54,6 +55,10 @@ export const session = {
   subscribe(listener: () => void) {
     listeners.add(listener);
     return () => listeners.delete(listener);
+  },
+  /** Token only, while a new device is being set up (the key is not unlocked yet). */
+  authenticate(token: string, username: string) {
+    emit({ ...EMPTY, token, username });
   },
   signIn(token: string, username: string, privateKey: UnlockedKey, publicKey: string, fingerprint: string) {
     emit({ token, username, privateKey, publicKey, fingerprint });

@@ -6,8 +6,8 @@ import { useState, type FormEvent } from "react";
 import { useApp } from "@/components/providers";
 import { Button, Card, Field, Notice } from "@/components/ui";
 import { ApiError } from "@/lib/api";
-import { generateKeyPair, unlockPrivateKey } from "@/lib/crypto";
-import { keystore } from "@/lib/keystore";
+import { generateKeyPair } from "@/lib/crypto";
+import { protectOnDevice } from "@/lib/device-key";
 import { session } from "@/lib/session";
 
 type Errors = Partial<Record<"username" | "password" | "passphrase" | "confirm" | "form", string>>;
@@ -45,19 +45,14 @@ export default function RegisterPage() {
       const keys = await generateKeyPair(username.toLowerCase(), passphrase);
 
       setStep("registering");
-      const auth = await api.register(username, password, keys.publicKey);
+      // Only the public key and the passphrase-locked backup leave this browser.
+      const auth = await api.register(username, password, keys.publicKey, keys.keyBackup);
       if (auth.fingerprint !== keys.fingerprint) {
         throw new Error("The server reported a different fingerprint for your key. Aborting.");
       }
-      await keystore.put({
-        username: auth.username,
-        publicKey: keys.publicKey,
-        encryptedPrivateKey: keys.encryptedPrivateKey,
-        fingerprint: keys.fingerprint,
-        createdAt: new Date().toISOString(),
-      });
-      const privateKey = await unlockPrivateKey(keys.encryptedPrivateKey, passphrase);
-      session.signIn(auth.token, auth.username, privateKey, keys.publicKey, keys.fingerprint);
+      // From now on this browser unlocks the key by itself: no passphrase at login.
+      await protectOnDevice(auth.username, keys);
+      session.signIn(auth.token, auth.username, keys.privateKey, keys.publicKey, keys.fingerprint);
       router.replace("/profile?welcome=1");
     } catch (err) {
       setStep("idle");
@@ -77,7 +72,8 @@ export default function RegisterPage() {
     <Card>
       <h1 className="text-xl font-medium">Create your account</h1>
       <p className="mt-2 text-sm leading-relaxed text-muted">
-        Your encryption key is created on this device. Only its public half is sent to the server.
+        Your encryption key is created on this device. The server gets its public half and a backup locked with
+        your key passphrase, which it can never open.
       </p>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
@@ -98,7 +94,7 @@ export default function RegisterPage() {
           type="password"
           autoComplete="off"
           required
-          hint="Locks your private key on this device. The server never sees it and cannot reset it."
+          hint="Asked only once here, then again only on a new device or browser. The server never sees it and cannot reset it."
           error={errors.passphrase}
         />
         <Field

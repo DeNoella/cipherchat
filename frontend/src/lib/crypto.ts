@@ -17,24 +17,38 @@ export interface MessageEnvelope {
 
 export interface GeneratedKeys {
   publicKey: string;
-  encryptedPrivateKey: string;
+  /** The private key locked with the passphrase: the backup uploaded to the server. */
+  keyBackup: string;
+  /** The same private key, unlocked, for this session and the device key. Never leaves the browser. */
+  privateKey: UnlockedKey;
   fingerprint: string;
 }
+
+/**
+ * Passphrase protection for the backup. Standard OpenPGP S2K (salted + iterated SHA-256, then AES-256)
+ * at the maximum work factor. Argon2 would be stronger but GnuPG 2.4 cannot read it yet.
+ */
+const BACKUP_CONFIG = { s2kIterationCountByte: 255 };
 
 export async function generateKeyPair(username: string, passphrase: string): Promise<GeneratedKeys> {
   const { publicKey, privateKey } = await openpgp.generateKey({
     type: "ecc",
     curve: "curve25519Legacy", // Ed25519 signing + X25519 (ECDH) encryption subkey
     userIDs: [{ name: username }],
-    passphrase,
-    format: "armored",
+    format: "object",
   });
-  return { publicKey, encryptedPrivateKey: privateKey, fingerprint: await fingerprintOf(publicKey) };
+  const keyBackup = (await openpgp.encryptKey({ privateKey, passphrase, config: BACKUP_CONFIG })).armor();
+  return {
+    publicKey: publicKey.armor(),
+    keyBackup,
+    privateKey,
+    fingerprint: privateKey.getFingerprint().toUpperCase(),
+  };
 }
 
-/** Throws WrongPassphraseError if the passphrase does not decrypt the key. */
-export async function unlockPrivateKey(encryptedPrivateKey: string, passphrase: string) {
-  const privateKey = await openpgp.readPrivateKey({ armoredKey: encryptedPrivateKey });
+/** Unlocks a passphrase-protected key backup. Throws WrongPassphraseError if the passphrase is wrong. */
+export async function unlockPrivateKey(keyBackup: string, passphrase: string): Promise<UnlockedKey> {
+  const privateKey = await openpgp.readPrivateKey({ armoredKey: keyBackup });
   try {
     return await openpgp.decryptKey({ privateKey, passphrase });
   } catch {
@@ -44,14 +58,28 @@ export async function unlockPrivateKey(encryptedPrivateKey: string, passphrase: 
 
 export class WrongPassphraseError extends Error {
   constructor() {
-    super("Wrong passphrase. Your key could not be unlocked.");
+    super(
+      "That passphrase does not unlock your key backup. Use the key passphrase you chose when you created " +
+        "your account (not your password).",
+    );
   }
 }
 
 export type UnlockedKey = openpgp.PrivateKey;
 
-export async function readPrivateKeyFingerprint(encryptedPrivateKey: string): Promise<string> {
-  const key = await openpgp.readPrivateKey({ armoredKey: encryptedPrivateKey });
+/** Raw OpenPGP bytes of an unlocked key, only for wrapping with the device key. Zero them after use. */
+export function serializeUnlockedKey(key: UnlockedKey): Uint8Array {
+  return key.write();
+}
+
+export async function readUnlockedKey(bytes: Uint8Array): Promise<UnlockedKey> {
+  const key = await openpgp.readPrivateKey({ binaryKey: bytes });
+  if (!key.isDecrypted()) throw new Error("Stored device key is not usable");
+  return key;
+}
+
+export async function readPrivateKeyFingerprint(keyBackup: string): Promise<string> {
+  const key = await openpgp.readPrivateKey({ armoredKey: keyBackup });
   return key.getFingerprint().toUpperCase();
 }
 

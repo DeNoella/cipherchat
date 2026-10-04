@@ -7,6 +7,14 @@ export interface AuthResponse {
   username: string;
   hasPublicKey: boolean;
   fingerprint?: string;
+  hasKeyBackup: boolean;
+}
+
+export interface KeyBackupResponse {
+  fingerprint: string;
+  /** Private key still locked with the user's passphrase. */
+  keyBackup: string;
+  updatedAt: string;
 }
 
 export interface KeyResponse {
@@ -84,12 +92,18 @@ export function createApi(baseUrl: string, getToken: () => string | null, onUnau
   const json = (body: unknown) => JSON.stringify(body);
 
   return {
-    register: (username: string, password: string, publicKey: string) =>
-      request<AuthResponse>("/api/auth/register", { method: "POST", body: json({ username, password, publicKey }) }),
+    register: (username: string, password: string, publicKey: string, keyBackup: string) =>
+      request<AuthResponse>("/api/auth/register", {
+        method: "POST",
+        body: json({ username, password, publicKey, keyBackup }),
+      }),
     login: (username: string, password: string) =>
       request<AuthResponse>("/api/auth/login", { method: "POST", body: json({ username, password }) }),
     uploadKey: (publicKey: string) =>
       request<KeyResponse>("/api/keys/me", { method: "PUT", body: json({ publicKey }) }),
+    uploadKeyBackup: (keyBackup: string) =>
+      request<KeyBackupResponse>("/api/keys/me/backup", { method: "PUT", body: json({ keyBackup }) }),
+    getKeyBackup: () => request<KeyBackupResponse>("/api/keys/me/backup"),
     getKey: (username: string) => request<KeyResponse>(`/api/keys/${encodeURIComponent(username)}`),
     searchUsers: (query: string) => request<UserSummary[]>(`/api/users?query=${encodeURIComponent(query)}`),
     conversations: () => request<ConversationResponse[]>("/api/conversations"),
