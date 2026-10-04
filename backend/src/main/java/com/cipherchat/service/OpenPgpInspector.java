@@ -5,6 +5,8 @@ import com.cipherchat.exception.InvalidPgpDataException;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.bcpg.ECPublicBCPGKey;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
+import org.bouncycastle.bcpg.SecretKeyPacket;
+import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
 import org.bouncycastle.openpgp.PGPEncryptedDataList;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPMarker;
@@ -12,6 +14,9 @@ import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPPublicKeyEncryptedData;
 import org.bouncycastle.openpgp.PGPPublicKeyRing;
 import org.bouncycastle.openpgp.PGPPublicKeyRingCollection;
+import org.bouncycastle.openpgp.PGPSecretKey;
+import org.bouncycastle.openpgp.PGPSecretKeyRing;
+import org.bouncycastle.openpgp.PGPSecretKeyRingCollection;
 import org.bouncycastle.openpgp.PGPSignature;
 import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.bc.BcPGPObjectFactory;
@@ -43,6 +48,7 @@ public class OpenPgpInspector {
 
     private static final int MIN_RSA_BITS = 2048;
     private static final String PUBLIC_KEY_HEADER = "-----BEGIN PGP PUBLIC KEY BLOCK-----";
+    private static final String PRIVATE_KEY_HEADER = "-----BEGIN PGP PRIVATE KEY BLOCK-----";
 
     private static final Map<String, String> CURVE_NAMES = Map.of(
             "1.3.6.1.4.1.11591.15.1", "Ed25519",
@@ -125,6 +131,34 @@ public class OpenPgpInspector {
     }
 
     /**
+     * Checks a private key backup without being able to open it: exactly one key, and every
+     * secret key packet locked with a passphrase. A key without a passphrase would be a usable
+     * private key on the server, so it is refused. Returns the primary key fingerprint.
+     */
+    public String inspectKeyBackup(String armored) {
+        if (armored == null || !armored.contains(PRIVATE_KEY_HEADER)) {
+            throw new InvalidPgpDataException("Expected an ASCII-armored OpenPGP private key backup");
+        }
+        if (armored.indexOf(PRIVATE_KEY_HEADER) != armored.lastIndexOf(PRIVATE_KEY_HEADER)) {
+            throw new InvalidPgpDataException("Upload exactly one key backup");
+        }
+        PGPSecretKeyRing ring = readSingleSecretRing(armored);
+        Iterator<PGPSecretKey> keys = ring.getSecretKeys();
+        while (keys.hasNext()) {
+            PGPSecretKey key = keys.next();
+            if (key.isPrivateKeyEmpty()) {
+                continue; // stub without secret material (gnu-dummy): nothing to protect
+            }
+            if (key.getS2KUsage() == SecretKeyPacket.USAGE_NONE
+                    || key.getKeyEncryptionAlgorithm() == SymmetricKeyAlgorithmTags.NULL) {
+                throw new InvalidPgpDataException(
+                        "Key backup must be locked with a passphrase. Never upload an unprotected private key");
+            }
+        }
+        return Hex.toHexString(ring.getPublicKey().getFingerprint()).toUpperCase();
+    }
+
+    /**
      * Confirms the data is an OpenPGP public-key-encrypted message and returns the key IDs it
      * is addressed to. Only the packet headers are read, not the encrypted payload.
      */
@@ -176,6 +210,22 @@ public class OpenPgpInspector {
                 throw ipe;
             }
             throw new InvalidPgpDataException("Malformed OpenPGP public key");
+        }
+    }
+
+    private static PGPSecretKeyRing readSingleSecretRing(String armored) {
+        try (InputStream in = PGPUtil.getDecoderStream(
+                new ByteArrayInputStream(armored.getBytes(StandardCharsets.US_ASCII)))) {
+            PGPSecretKeyRingCollection rings = new PGPSecretKeyRingCollection(in, new BcKeyFingerprintCalculator());
+            if (rings.size() != 1) {
+                throw new InvalidPgpDataException("Upload exactly one key backup (found " + rings.size() + ")");
+            }
+            return rings.getKeyRings().next();
+        } catch (IOException | PGPException | RuntimeException e) {
+            if (e instanceof InvalidPgpDataException ipe) {
+                throw ipe;
+            }
+            throw new InvalidPgpDataException("Malformed OpenPGP private key backup");
         }
     }
 

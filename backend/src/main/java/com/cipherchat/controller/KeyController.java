@@ -1,9 +1,12 @@
 package com.cipherchat.controller;
 
+import com.cipherchat.dto.KeyBackupRequest;
+import com.cipherchat.dto.KeyBackupResponse;
 import com.cipherchat.dto.KeyResponse;
 import com.cipherchat.dto.UploadKeyRequest;
 import com.cipherchat.model.User;
 import com.cipherchat.security.AuthUser;
+import com.cipherchat.service.KeyBackupService;
 import com.cipherchat.service.PublicKeyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,15 +28,31 @@ import org.springframework.web.bind.annotation.RestController;
 public class KeyController {
 
     private final PublicKeyService publicKeyService;
+    private final KeyBackupService keyBackupService;
 
-    public KeyController(PublicKeyService publicKeyService) {
+    public KeyController(PublicKeyService publicKeyService, KeyBackupService keyBackupService) {
         this.publicKeyService = publicKeyService;
+        this.keyBackupService = keyBackupService;
     }
 
     @Operation(summary = "Upload or replace your public key. Validated and fingerprinted server-side.")
     @PutMapping("/me")
     public KeyResponse upload(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody UploadKeyRequest request) {
         return publicKeyService.upload(me.id(), request.publicKey());
+    }
+
+    @Operation(summary = "Upload or replace your passphrase-locked private key backup. "
+            + "Must match your public key; unprotected keys are refused.")
+    @PutMapping("/me/backup")
+    public KeyBackupResponse uploadBackup(@AuthenticationPrincipal AuthUser me,
+                                          @Valid @RequestBody KeyBackupRequest request) {
+        return keyBackupService.upload(me.id(), request.keyBackup());
+    }
+
+    @Operation(summary = "Download your passphrase-locked private key backup, to set up a new device")
+    @GetMapping("/me/backup")
+    public KeyBackupResponse getBackup(@AuthenticationPrincipal AuthUser me) {
+        return keyBackupService.get(me.id());
     }
 
     @Operation(summary = "Fetch a user's public key and fingerprint")

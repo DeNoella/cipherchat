@@ -6,7 +6,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-@Schema(description = "New account. publicKey is optional here and can be uploaded later via PUT /api/keys/me.")
+@Schema(description = "New account. publicKey and keyBackup are optional here and can be uploaded later "
+        + "via PUT /api/keys/me and PUT /api/keys/me/backup.")
 public record RegisterRequest(
         @NotBlank @Pattern(regexp = User.USERNAME_REGEX, message = "3-32 characters: letters, digits or underscore")
         String username,
@@ -14,5 +15,9 @@ public record RegisterRequest(
         String password,
         @Size(max = 20000, message = "is too large")
         @Schema(description = "ASCII-armored OpenPGP public key", nullable = true)
-        String publicKey) {
+        String publicKey,
+        @Size(max = 20000, message = "is too large")
+        @Schema(description = "ASCII-armored OpenPGP private key locked with the user's passphrase (needs publicKey)",
+                nullable = true)
+        String keyBackup) {
 }

@@ -27,16 +27,19 @@ public class AuthService {
     private final JwtService jwtService;
     private final LoginAttemptGuard attemptGuard;
     private final PublicKeyService publicKeyService;
+    private final KeyBackupService keyBackupService;
     /** Hash of a random value, compared against when the user does not exist to equalise timing. */
     private final String dummyHash;
 
     public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService,
-                       LoginAttemptGuard attemptGuard, PublicKeyService publicKeyService) {
+                       LoginAttemptGuard attemptGuard, PublicKeyService publicKeyService,
+                       KeyBackupService keyBackupService) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.attemptGuard = attemptGuard;
         this.publicKeyService = publicKeyService;
+        this.keyBackupService = keyBackupService;
         this.dummyHash = passwordEncoder.encode("timing-equaliser-" + System.nanoTime());
     }
 
@@ -57,6 +60,9 @@ public class AuthService {
         User user = new User(username, passwordEncoder.encode(request.password()));
         if (request.publicKey() != null && !request.publicKey().isBlank()) {
             publicKeyService.applyTo(user, request.publicKey());
+        }
+        if (request.keyBackup() != null && !request.keyBackup().isBlank()) {
+            keyBackupService.applyTo(user, request.keyBackup());
         }
         try {
             users.saveAndFlush(user);
@@ -85,6 +91,6 @@ public class AuthService {
     private AuthResponse tokenFor(User user) {
         String token = jwtService.issue(new AuthUser(user.getId(), user.getUsername()));
         return new AuthResponse(token, "Bearer", jwtService.ttlSeconds(), user.getUsername(),
-                user.hasPublicKey(), user.getKeyFingerprint());
+                user.hasPublicKey(), user.getKeyFingerprint(), user.hasKeyBackup());
     }
 }

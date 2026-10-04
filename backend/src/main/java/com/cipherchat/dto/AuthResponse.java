@@ -8,5 +8,7 @@ public record AuthResponse(
         long expiresIn,
         String username,
         boolean hasPublicKey,
-        String fingerprint) {
+        String fingerprint,
+        @Schema(description = "True if a passphrase-locked key backup is stored, so a new device can be set up")
+        boolean hasKeyBackup) {
 }

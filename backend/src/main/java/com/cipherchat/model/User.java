@@ -41,6 +41,16 @@ public class User {
     @Column(name = "key_uploaded_at")
     private Instant keyUploadedAt;
 
+    /**
+     * The user's private key as the browser uploaded it (locked with their passphrase), then
+     * encrypted again by the server before storage. Never a usable private key.
+     */
+    @Column(name = "key_backup", length = 40000)
+    private String keyBackup;
+
+    @Column(name = "key_backup_updated_at")
+    private Instant keyBackupUpdatedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -54,6 +64,10 @@ public class User {
     }
 
     public void setPublicKey(String armoredKey, String fingerprint, String algorithm, Instant keyCreatedAt) {
+        if (!fingerprint.equals(this.keyFingerprint)) {
+            // A backup of the old key is useless for the new one.
+            clearKeyBackup();
+        }
         this.publicKey = armoredKey;
         this.keyFingerprint = fingerprint;
         this.keyAlgorithm = algorithm;
@@ -63,6 +77,28 @@ public class User {
 
     public boolean hasPublicKey() {
         return publicKey != null;
+    }
+
+    public void setKeyBackup(String storedBackup) {
+        this.keyBackup = storedBackup;
+        this.keyBackupUpdatedAt = Instant.now();
+    }
+
+    public void clearKeyBackup() {
+        this.keyBackup = null;
+        this.keyBackupUpdatedAt = null;
+    }
+
+    public boolean hasKeyBackup() {
+        return keyBackup != null;
+    }
+
+    public String getKeyBackup() {
+        return keyBackup;
+    }
+
+    public Instant getKeyBackupUpdatedAt() {
+        return keyBackupUpdatedAt;
     }
 
     public Long getId() {
