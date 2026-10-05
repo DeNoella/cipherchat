@@ -88,10 +88,7 @@ management:
       show-details: never
 
 ---
-# A separate document so the import above is loaded before Vault is contacted.
-# Secrets are never in this file or in env files: the JWT signing secret and the database
-# credentials (app.jwt.secret, spring.datasource.username/password) are read from Vault KV v2 at
-# secret/cipherchat when the app starts. See vault/init.sh and docs/KEY_MANAGEMENT.md.
+
 spring:
   config:
     import: vault://
