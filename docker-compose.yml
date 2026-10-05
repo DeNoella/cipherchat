@@ -1,6 +1,3 @@
-# One-command local stack:  cp .env.example .env && docker compose up --build
-# Frontend http://localhost:3000 · API http://localhost:8080 · Swagger http://localhost:8080/swagger-ui.html
-# Vault UI http://localhost:8200 (dev mode, sign in with VAULT_DEV_ROOT_TOKEN from .env)
 
 services:
   db:
@@ -17,15 +14,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    # Published on the loopback interface only, for `./mvnw spring-boot:run` and scripts/reset-dev-data.sh.
     ports:
       - "127.0.0.1:5433:5432"
 
-  # ---------------------------------------------------------------------------------------------
-  # HashiCorp Vault in DEV MODE. FOR LOCAL DEVELOPMENT ONLY, NEVER FOR PRODUCTION:
-  # in-memory storage, already unsealed, a root token from .env, plain HTTP.
-  # Production setup: DEPLOYMENT_AND_SUGGESTIONS.md ("Running Vault in production").
-  # ---------------------------------------------------------------------------------------------
+ 
   vault:
     image: hashicorp/vault:2.1
     restart: unless-stopped
@@ -42,14 +34,13 @@ services:
       timeout: 3s
       retries: 20
 
-  # One-shot job: KV secrets, Transit key, least-privilege policy and AppRole login for the backend.
-  # Runs again on every `docker compose up` (dev Vault forgets everything when it restarts).
+  
   vault-init:
     image: hashicorp/vault:2.1
     depends_on:
       vault:
         condition: service_healthy
-    user: "0" # to write the dev persist volume
+    user: "0" 
     entrypoint: ["/bin/sh", "/vault-init/init.sh"]
     environment:
       VAULT_ADDR: http://vault:8200
@@ -58,7 +49,6 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       VAULT_ROLE_ID: ${VAULT_ROLE_ID:?Set VAULT_ROLE_ID in .env}
       VAULT_SECRET_ID: ${VAULT_SECRET_ID:?Set VAULT_SECRET_ID in .env}
-      # Dev only: keeps the JWT secret and a Transit key backup across dev Vault restarts.
       DEV_PERSIST_DIR: /vault-dev-state
     volumes:
       - ./vault/init.sh:/vault-init/init.sh:ro
@@ -75,7 +65,6 @@ services:
         condition: service_completed_successfully
     environment:
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-cipherchat}
-      # No database password or JWT secret here: the backend reads both from Vault after an AppRole login.
       VAULT_URI: http://vault:8200
       VAULT_ROLE_ID: ${VAULT_ROLE_ID}
       VAULT_SECRET_ID: ${VAULT_SECRET_ID}
