@@ -242,7 +242,7 @@ Open <http://localhost:3000>. If the backend is not on `localhost:8080`, set `AP
 ### Running the tests
 
 ```bash
-cd backend && ./mvnw verify           # 58 unit + integration tests (auth, keys, key backups, Vault, messages, attachments, WebSocket); needs Docker for Vault
+cd backend && ./mvnw verify           # 63 unit + integration tests (auth, users, keys, key backups, Vault, messages, attachments, WebSocket); needs Docker for Vault
 cd frontend && npm run lint && npm run build
 # Full browser test against the running stack (needs Google Chrome); safe to repeat:
 cd frontend && npm run test:e2e
