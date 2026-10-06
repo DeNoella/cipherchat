@@ -1,6 +1,6 @@
 package com.cipherchat.security;
 
-import com.cipherchat.repository.UserRepository;
+import com.cipherchat.service.UserService;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageDeliveryException;
@@ -29,11 +29,11 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private static final String BEARER = "Bearer ";
 
     private final JwtService jwtService;
-    private final UserRepository users;
+    private final UserService userService;
 
-    public StompAuthChannelInterceptor(JwtService jwtService, UserRepository users) {
+    public StompAuthChannelInterceptor(JwtService jwtService, UserService userService) {
         this.jwtService = jwtService;
-        this.users = users;
+        this.userService = userService;
     }
 
     @Override
@@ -48,7 +48,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                 String header = accessor.getFirstNativeHeader("Authorization");
                 AuthUser user = header != null && header.startsWith(BEARER)
                         ? jwtService.verify(header.substring(BEARER.length()).trim())
-                        .filter(u -> users.existsById(u.id()))
+                        .filter(u -> userService.exists(u.id()))
                         .orElse(null)
                         : null;
                 if (user == null) {

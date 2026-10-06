@@ -6,7 +6,7 @@ All example responses below were captured from a real run against `docker compos
 
 - [Before you start](#before-you-start)
 - [Error format](#error-format-all-endpoints)
-- [1. Register](#1-register) · [2. Login](#2-login) · [3. Upload your public key](#3-upload-your-public-key) · [3a. Upload your key backup](#3a-upload-your-key-backup) · [3b. Download your key backup](#3b-download-your-key-backup-new-device) · [4. Get a user's public key](#4-get-a-users-public-key) · [5. Search users](#5-search-users) · [6. Start a conversation](#6-start-a-conversation) · [7. List conversations](#7-list-conversations) · [8. Upload an attachment](#8-upload-an-encrypted-attachment) · [9. Send a message](#9-send-a-message) · [10. Read history](#10-read-message-history) · [11. Download an attachment](#11-download-an-attachment) · [12. WebSocket](#12-real-time-delivery-websocket--stomp) · [13. Health](#13-health-check)
+- [1. Register](#1-register) · [2. Login](#2-login) · [3. Upload your public key](#3-upload-your-public-key) · [3a. Upload your key backup](#3a-upload-your-key-backup) · [3b. Download your key backup](#3b-download-your-key-backup-new-device) · [4. Get a user's public key](#4-get-a-users-public-key) · [5. Search users](#5-search-users) · [5a. Your profile](#5a-your-profile) · [5b. Look up one user](#5b-look-up-one-user) · [5c. Change your password](#5c-change-your-password) · [6. Start a conversation](#6-start-a-conversation) · [7. List conversations](#7-list-conversations) · [8. Upload an attachment](#8-upload-an-encrypted-attachment) · [9. Send a message](#9-send-a-message) · [10. Read history](#10-read-message-history) · [11. Download an attachment](#11-download-an-attachment) · [12. WebSocket](#12-real-time-delivery-websocket--stomp) · [13. Health](#13-health-check)
 - [Testing with Swagger UI](#testing-with-swagger-ui) · [Testing with Postman](#testing-with-postman)
 
 ---
@@ -397,6 +397,82 @@ curl -s "$API/api/users?query=b" -H "Authorization: Bearer $TOKEN" | jq
 ```
 
 **Common errors**: `400` with `Missing parameter 'query'`, or `Validation failed` when the query contains characters other than letters, digits or `_`.
+
+---
+
+## 5a. Your profile
+
+Your own account. It never contains the password hash or the key backup.
+
+| | |
+|---|---|
+| **Method / URL** | `GET /api/users/me` |
+| **Headers** | `Authorization: Bearer $TOKEN` |
+
+```bash
+curl -s $API/api/users/me -H "Authorization: Bearer $TOKEN" | jq
+```
+
+**Expected: `200 OK`**
+
+```json
+{
+  "username": "alice",
+  "createdAt": "2026-10-06T08:00:00Z",
+  "hasPublicKey": true,
+  "fingerprint": "…",
+  "keyAlgorithm": "EdDSA/Ed25519 + ECDH/Curve25519",
+  "keyUploadedAt": "2026-10-06T08:01:00Z",
+  "hasKeyBackup": false
+}
+```
+
+**Common errors**: `401` without a valid token.
+
+---
+
+## 5b. Look up one user
+
+| | |
+|---|---|
+| **Method / URL** | `GET /api/users/{username}` |
+| **Headers** | `Authorization: Bearer $TOKEN` |
+
+```bash
+curl -s $API/api/users/bob -H "Authorization: Bearer $TOKEN" | jq
+```
+
+**Expected: `200 OK`**
+
+```json
+{ "username": "bob", "hasPublicKey": true, "fingerprint": "4F31BC122A5884A3268BA26BF76507735FAC07F9" }
+```
+
+**Common errors**: `404` with `User not found`; `400` with `Validation failed` when the username is not 3-32 letters, digits or `_`.
+
+---
+
+## 5c. Change your password
+
+Changes the login password. The key passphrase and the key backup are not affected, and tokens already issued stay valid until they expire.
+
+| | |
+|---|---|
+| **Method / URL** | `PUT /api/users/me/password` |
+| **Headers** | `Authorization: Bearer $TOKEN`, `Content-Type: application/json` |
+| **Body** | `{"currentPassword": "...", "newPassword": "..."}` (new password: 10-72 characters) |
+
+```bash
+curl -si -X PUT $API/api/users/me/password -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"currentPassword":"correct horse battery","newPassword":"a brand new passphrase"}' | head -1
+# Change it back so the rest of this guide still works:
+curl -si -X PUT $API/api/users/me/password -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"currentPassword":"a brand new passphrase","newPassword":"correct horse battery"}' | head -1
+```
+
+**Expected: `204 No Content`**
+
+**Common errors**: `400` with `Current password is incorrect`, `New password must be different from the current one`, or `Validation failed` (`fieldErrors.newPassword`) when the new password is too short or too long.
 
 ---
 

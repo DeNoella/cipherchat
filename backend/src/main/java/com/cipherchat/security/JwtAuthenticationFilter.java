@@ -1,6 +1,6 @@
 package com.cipherchat.security;
 
-import com.cipherchat.repository.UserRepository;
+import com.cipherchat.service.UserService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,11 +24,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER = "Bearer ";
 
     private final JwtService jwtService;
-    private final UserRepository users;
+    private final UserService userService;
 
-    public JwtAuthenticationFilter(JwtService jwtService, UserRepository users) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserService userService) {
         this.jwtService = jwtService;
-        this.users = users;
+        this.userService = userService;
     }
 
     @Override
@@ -38,7 +38,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith(BEARER)) {
             jwtService.verify(header.substring(BEARER.length()).trim())
                     // Reject tokens for accounts that no longer exist.
-                    .filter(user -> users.existsById(user.id()))
+                    .filter(user -> userService.exists(user.id()))
                     .ifPresent(user -> SecurityContextHolder.getContext().setAuthentication(toAuthentication(user)));
         }
         chain.doFilter(request, response);

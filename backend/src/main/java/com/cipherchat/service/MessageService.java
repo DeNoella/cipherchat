@@ -8,9 +8,7 @@ import com.cipherchat.model.Attachment;
 import com.cipherchat.model.Conversation;
 import com.cipherchat.model.Message;
 import com.cipherchat.model.User;
-import com.cipherchat.repository.AttachmentRepository;
 import com.cipherchat.repository.MessageRepository;
-import com.cipherchat.security.AuthUser;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -30,19 +28,19 @@ public class MessageService {
     }
 
     private final MessageRepository messages;
-    private final AttachmentRepository attachments;
+    private final AttachmentService attachmentService;
     private final ConversationService conversationService;
     private final OpenPgpInspector inspector;
     private final PublicKeyService publicKeyService;
     private final ApplicationEventPublisher events;
     private final int maxCiphertextChars;
 
-    public MessageService(MessageRepository messages, AttachmentRepository attachments,
+    public MessageService(MessageRepository messages, AttachmentService attachmentService,
                           ConversationService conversationService, OpenPgpInspector inspector,
                           PublicKeyService publicKeyService,
                           ApplicationEventPublisher events, AppProperties properties) {
         this.messages = messages;
-        this.attachments = attachments;
+        this.attachmentService = attachmentService;
         this.conversationService = conversationService;
         this.inspector = inspector;
         this.publicKeyService = publicKeyService;
@@ -51,12 +49,12 @@ public class MessageService {
     }
 
     @Transactional
-    public MessageResponse send(AuthUser me, SendMessageRequest request) {
+    public MessageResponse send(Long userId, SendMessageRequest request) {
         if (request.ciphertext().length() > maxCiphertextChars) {
             throw ApiException.payloadTooLarge("Message is too large");
         }
-        Conversation conversation = conversationService.getOrCreate(me.id(), request.recipientUsername());
-        User recipient = conversation.peerOf(me.id());
+        Conversation conversation = conversationService.getOrCreate(userId, request.recipientUsername());
+        User recipient = conversation.peerOf(userId);
         User sender = conversation.peerOf(recipient.getId());
 
         publicKeyService.requireAddressedToBoth(inspector.encryptedMessageRecipients(request.ciphertext()),
@@ -64,10 +62,7 @@ public class MessageService {
 
         Attachment attachment = null;
         if (request.attachmentId() != null) {
-            attachment = attachments.findById(request.attachmentId())
-                    .filter(a -> a.getConversation().getId().equals(conversation.getId())
-                            && a.getUploader().getId().equals(me.id()))
-                    .orElseThrow(() -> ApiException.badRequest("Unknown attachment"));
+            attachment = attachmentService.requireUploadedBy(request.attachmentId(), conversation.getId(), userId);
             if (messages.existsByAttachmentId(attachment.getId())) {
                 throw ApiException.badRequest("Attachment is already linked to a message");
             }

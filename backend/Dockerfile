@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1
 
-# ---- Build ----
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 COPY .mvn/ .mvn/
@@ -10,7 +9,6 @@ COPY src/ src/
 # Tests run in CI and locally (./mvnw verify); the image build only packages.
 RUN ./mvnw -B -q package -DskipTests && cp target/cipherchat-backend-*.jar app.jar
 
-# ---- Runtime ----
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN addgroup -S app && adduser -S app -G app \

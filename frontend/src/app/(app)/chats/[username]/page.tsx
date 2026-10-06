@@ -68,7 +68,6 @@ export default function ChatPage() {
     [me, myPublicKey, privateKey],
   );
 
-  // Load the peer's key, the conversation and its history.
   useEffect(() => {
     let cancelled = false;
     (async () => {

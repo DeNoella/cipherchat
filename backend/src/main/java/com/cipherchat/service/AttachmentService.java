@@ -73,6 +73,15 @@ public class AttachmentService {
         return AttachmentResponse.from(attachment);
     }
 
+    /** An attachment this user uploaded into this conversation, for linking to a message. */
+    @Transactional(readOnly = true)
+    public Attachment requireUploadedBy(UUID id, Long conversationId, Long userId) {
+        return attachments.findById(id)
+                .filter(a -> a.getConversation().getId().equals(conversationId)
+                        && a.getUploader().getId().equals(userId))
+                .orElseThrow(() -> ApiException.badRequest("Unknown attachment"));
+    }
+
     /** Participants only; everyone else gets 404 so ids cannot be probed. */
     @Transactional(readOnly = true)
     public Download download(Long userId, UUID id) {

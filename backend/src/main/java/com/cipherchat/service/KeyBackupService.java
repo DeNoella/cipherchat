@@ -3,7 +3,6 @@ package com.cipherchat.service;
 import com.cipherchat.dto.KeyBackupResponse;
 import com.cipherchat.exception.ApiException;
 import com.cipherchat.model.User;
-import com.cipherchat.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,12 +16,12 @@ public class KeyBackupService {
 
     private final OpenPgpInspector inspector;
     private final KeyBackupEnvelope envelope;
-    private final UserRepository users;
+    private final UserService userService;
 
-    public KeyBackupService(OpenPgpInspector inspector, KeyBackupEnvelope envelope, UserRepository users) {
+    public KeyBackupService(OpenPgpInspector inspector, KeyBackupEnvelope envelope, UserService userService) {
         this.inspector = inspector;
         this.envelope = envelope;
-        this.users = users;
+        this.userService = userService;
     }
 
     /** Checks the backup is passphrase-locked and matches the user's current public key. */
@@ -43,7 +42,7 @@ public class KeyBackupService {
 
     @Transactional
     public KeyBackupResponse upload(Long userId, String armoredBackup) {
-        User user = users.findById(userId).orElseThrow(() -> ApiException.unauthorized("Account no longer exists"));
+        User user = userService.getById(userId);
         validate(user, armoredBackup);
         store(user, armoredBackup);
         return new KeyBackupResponse(user.getKeyFingerprint(), armoredBackup, user.getKeyBackupUpdatedAt());
@@ -51,7 +50,7 @@ public class KeyBackupService {
 
     @Transactional(readOnly = true)
     public KeyBackupResponse get(Long userId) {
-        User user = users.findById(userId).orElseThrow(() -> ApiException.unauthorized("Account no longer exists"));
+        User user = userService.getById(userId);
         if (!user.hasKeyBackup()) {
             throw ApiException.notFound("No key backup is stored for this account");
         }

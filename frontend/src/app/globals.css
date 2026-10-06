@@ -1,6 +1,5 @@
 @import "tailwindcss";
 
-/* Calm, dark, neutral palette with a single muted accent. */
 @theme {
   --color-base: #111315;
   --color-surface: #181b1e;

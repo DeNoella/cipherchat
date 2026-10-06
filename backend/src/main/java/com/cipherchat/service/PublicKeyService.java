@@ -4,7 +4,6 @@ import com.cipherchat.dto.KeyResponse;
 import com.cipherchat.dto.PublicKeyInfo;
 import com.cipherchat.exception.ApiException;
 import com.cipherchat.model.User;
-import com.cipherchat.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,11 +14,11 @@ import java.util.Set;
 public class PublicKeyService {
 
     private final OpenPgpInspector inspector;
-    private final UserRepository users;
+    private final UserService userService;
 
-    public PublicKeyService(OpenPgpInspector inspector, UserRepository users) {
+    public PublicKeyService(OpenPgpInspector inspector, UserService userService) {
         this.inspector = inspector;
-        this.users = users;
+        this.userService = userService;
     }
 
     /** Validates the key with BouncyCastle and stores its canonical form and fingerprint on the user. */
@@ -31,15 +30,14 @@ public class PublicKeyService {
 
     @Transactional
     public KeyResponse upload(Long userId, String armoredPublicKey) {
-        User user = users.findById(userId).orElseThrow(() -> ApiException.unauthorized("Account no longer exists"));
+        User user = userService.getById(userId);
         applyTo(user, armoredPublicKey);
         return KeyResponse.from(user);
     }
 
     @Transactional(readOnly = true)
     public KeyResponse get(String username) {
-        User user = users.findByUsername(AuthService.normalizeUsername(username))
-                .orElseThrow(() -> ApiException.notFound("User not found"));
+        User user = userService.getByUsername(username);
         if (!user.hasPublicKey()) {
             throw ApiException.notFound("User has not uploaded a public key yet");
         }

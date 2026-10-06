@@ -31,6 +31,6 @@ public class MessageController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public MessageResponse send(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody SendMessageRequest request) {
-        return messageService.send(me, request);
+        return messageService.send(me.id(), request);
     }
 }

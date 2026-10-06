@@ -5,7 +5,6 @@ import com.cipherchat.exception.ApiException;
 import com.cipherchat.model.Conversation;
 import com.cipherchat.model.User;
 import com.cipherchat.repository.ConversationRepository;
-import com.cipherchat.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,11 +14,11 @@ import java.util.List;
 public class ConversationService {
 
     private final ConversationRepository conversations;
-    private final UserRepository users;
+    private final UserService userService;
 
-    public ConversationService(ConversationRepository conversations, UserRepository users) {
+    public ConversationService(ConversationRepository conversations, UserService userService) {
         this.conversations = conversations;
-        this.users = users;
+        this.userService = userService;
     }
 
     @Transactional(readOnly = true)
@@ -37,9 +36,8 @@ public class ConversationService {
     /** Finds the one-to-one conversation between the caller and {@code peerUsername}, creating it if needed. */
     @Transactional
     public Conversation getOrCreate(Long userId, String peerUsername) {
-        User me = users.findById(userId).orElseThrow(() -> ApiException.unauthorized("Account no longer exists"));
-        User peer = users.findByUsername(AuthService.normalizeUsername(peerUsername))
-                .orElseThrow(() -> ApiException.notFound("User not found"));
+        User me = userService.getById(userId);
+        User peer = userService.getByUsername(peerUsername);
         if (me.getId().equals(peer.getId())) {
             throw ApiException.badRequest("You cannot start a conversation with yourself");
         }

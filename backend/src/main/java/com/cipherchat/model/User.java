@@ -75,6 +75,11 @@ public class User {
         this.keyUploadedAt = Instant.now();
     }
 
+    /** Replaces the BCrypt hash. The caller has already checked the current password. */
+    public void changePasswordHash(String newPasswordHash) {
+        this.passwordHash = newPasswordHash;
+    }
+
     public boolean hasPublicKey() {
         return publicKey != null;
     }

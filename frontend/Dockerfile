@@ -1,12 +1,10 @@
 # syntax=docker/dockerfile:1
 
-# ---- Dependencies ----
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# ---- Build ----
 FROM node:22-alpine AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -14,7 +12,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-# ---- Runtime (standalone server, no dev dependencies) ----
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production \
